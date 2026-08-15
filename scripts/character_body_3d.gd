@@ -2,7 +2,6 @@ extends CharacterBody3D
 
 const SPEED := 4.0
 const SPRINT := 6.4
-const JUMP_VELOCITY := 4.5
 const MOUSE_SENS := 0.0025
 const INTERACT_RANGE := 3.0
 
@@ -86,9 +85,6 @@ func _physics_process(delta: float) -> void:
 	if not is_on_floor():
 		velocity += get_gravity() * delta
 
-	if Input.is_action_just_pressed("jump") and is_on_floor():
-		velocity.y = JUMP_VELOCITY
-
 	var speed := SPRINT if Input.is_action_pressed("sprint") else SPEED
 	var input_dir := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
 	var direction := (transform.basis * Vector3(input_dir.x, 0.0, input_dir.y)).normalized()
@@ -149,7 +145,6 @@ func _ensure_actions() -> void:
 	_bind("move_back",    [KEY_S])
 	_bind("move_left",    [KEY_A])
 	_bind("move_right",   [KEY_D])
-	_bind("jump",         [KEY_SPACE])
 	_bind("sprint",       [KEY_SHIFT])
 	_bind("interact",     [KEY_R], [MOUSE_BUTTON_LEFT])
 

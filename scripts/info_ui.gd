@@ -50,6 +50,10 @@ func _update_r(delta: float) -> void:
 func _update_wasd(delta: float) -> void:
 	if _hint == Hint.DONE and _wasd.modulate.a <= 0.0:
 		return
+	# While a cutscene holds the player, keys don't count as "they know how to
+	# move" and the idle clock shouldn't tick either.
+	if _player.cinematic:
+		return
 
 	var moved := Input.get_vector("move_left", "move_right", "move_forward", "move_back") != Vector2.ZERO
 

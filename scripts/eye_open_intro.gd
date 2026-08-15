@@ -12,8 +12,12 @@ const OVERLAY_SHADER := preload("res://scripts/wake_up_overlay.gdshader")
 @export var start_delay := 0.4
 ## Total feel of the effect; the blink pattern scales to it.
 @export var duration := 2.6
+## Player to freeze while the eyes are shut, so nobody walks blind into a
+## wall. Leave empty to keep the old purely-visual behavior.
+@export var player_path: NodePath = NodePath("../player")
 
 var _mat: ShaderMaterial
+var _player: Node
 
 
 func _ready() -> void:
@@ -34,6 +38,10 @@ func _ready() -> void:
 	var vs := get_viewport().get_visible_rect().size
 	_mat.set_shader_parameter("aspect", vs.x / maxf(vs.y, 1.0))
 
+	_player = get_node_or_null(player_path)
+	if _player != null and _player.has_method("begin_cinematic"):
+		_player.begin_cinematic()
+
 	var tween := create_tween()
 	tween.tween_interval(start_delay)
 
@@ -44,5 +52,7 @@ func _ready() -> void:
 	tween.parallel().tween_property(_mat, "shader_parameter/vignette", 0.0, duration)
 
 	tween.tween_callback(func():
+		if _player != null and _player.has_method("end_cinematic"):
+			_player.end_cinematic()
 		finished.emit()
 		queue_free())
