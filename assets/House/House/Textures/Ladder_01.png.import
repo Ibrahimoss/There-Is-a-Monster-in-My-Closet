@@ -3,7 +3,7 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://bscc370sjjcaf"
-path="res://.godot/imported/Ladder_01.png-3cfd458d5dd1897c5a704270bec3b3ae.ctex"
+path="res://.godot/imported/Ladder_01.png-9dbedc147265158a9570822b3191e42a.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://assets/House/House/Textures/Ladder_01.png"
-dest_files=["res://.godot/imported/Ladder_01.png-3cfd458d5dd1897c5a704270bec3b3ae.ctex"]
+dest_files=["res://.godot/imported/Ladder_01.png-9dbedc147265158a9570822b3191e42a.ctex"]
 
 [params]
 
