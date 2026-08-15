@@ -3,7 +3,7 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://bxmp4i755g8ql"
-path="res://.godot/imported/Fabric.jpg-b69fd002fecae0715b4821d42292e86c.ctex"
+path="res://.godot/imported/Fabric.jpg-e4343f2fad292446772b056614396bf8.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://assets/House/House/Textures/Fabric.jpg"
-dest_files=["res://.godot/imported/Fabric.jpg-b69fd002fecae0715b4821d42292e86c.ctex"]
+dest_files=["res://.godot/imported/Fabric.jpg-e4343f2fad292446772b056614396bf8.ctex"]
 
 [params]
 

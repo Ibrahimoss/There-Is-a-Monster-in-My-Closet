@@ -3,7 +3,7 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://bxa5hurys5dqn"
-path="res://.godot/imported/Alarm_clock_Emissor.png-6b03eef0a97dd1735ffba42ce4a2917a.ctex"
+path="res://.godot/imported/Alarm_clock_Emissor.png-ea0630f424225e8ff4d07564acc490ff.ctex"
 metadata={
 "vram_texture": false
 }
@@ -11,7 +11,7 @@ metadata={
 [deps]
 
 source_file="res://assets/House/House/Textures/Alarm_clock_Emissor.png"
-dest_files=["res://.godot/imported/Alarm_clock_Emissor.png-6b03eef0a97dd1735ffba42ce4a2917a.ctex"]
+dest_files=["res://.godot/imported/Alarm_clock_Emissor.png-ea0630f424225e8ff4d07564acc490ff.ctex"]
 
 [params]
 

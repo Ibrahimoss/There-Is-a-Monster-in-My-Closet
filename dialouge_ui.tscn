@@ -1,0 +1,46 @@
+[gd_scene format=3 uid="uid://df7ubvbmhwg6n"]
+
+[ext_resource type="Script" uid="uid://cc7qm7dknbgvr" path="res://scripts/dialogue_ui.gd" id="1_script"]
+[ext_resource type="FontFile" uid="uid://dj07qncjk1ax7" path="res://assets/fonts/Amazdoomleft-epw3.ttf" id="2_font"]
+
+[sub_resource type="FontVariation" id="FontVariation_doom"]
+base_font = ExtResource("2_font")
+spacing_glyph = 2
+
+[sub_resource type="LabelSettings" id="LabelSettings_doom"]
+font = SubResource("FontVariation_doom")
+font_size = 42
+font_color = Color(1, 1, 0.92941177, 1)
+outline_size = 10
+outline_color = Color(0.09, 0.055, 0.03, 1)
+shadow_size = 6
+shadow_color = Color(0, 0, 0, 0.6)
+shadow_offset = Vector2(3, 3)
+
+[node name="dialouge ui" type="Control" unique_id=1838246977]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("1_script")
+
+[node name="Text" type="Label" parent="." unique_id=1838246978]
+layout_mode = 1
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 80.0
+offset_top = -200.0
+offset_right = -80.0
+offset_bottom = -60.0
+grow_horizontal = 2
+grow_vertical = 0
+text = "svargagrgrae"
+label_settings = SubResource("LabelSettings_doom")
+horizontal_alignment = 1
+vertical_alignment = 2
+autowrap_mode = 2
