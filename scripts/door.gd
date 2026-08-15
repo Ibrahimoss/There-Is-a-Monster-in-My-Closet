@@ -1,343 +1,278 @@
 class_name Door
-extends Node3D
-## A doorway made functional at runtime by adopting one of the house model's
-## door panel meshes.
+extends MeshInstance3D
+
+## A hinged door the player can open and close with the interact key.
 ##
-## house.fbx ships every panel already closed in its frame, as a static mesh
-## whose node origin sits exactly on the hinge edge. So a working door is:
-## put a world-aligned hinge node at that origin, reparent the panel under it,
-## give it a collider and an interact area, and rotate the hinge about world Y.
-## The panel's own (FBX-rotated) axes are never touched.
+## Put this on the door's own node — the one whose origin sits at the hinge
+## edge — and give it a child body with a collider so it blocks the way when
+## shut. The player's raycast walks up from the collider looking for a node
+## with an interact() method, so it finds this from the AnimatableBody3D.
 ##
-## Tree after setup():
-##   Door (this - at the hinge pivot, world-aligned, never rotates)
-##   ├── Hinge (rotates about Y - swing lives here)
-##   │   ├── <adopted panel MeshInstance3D>
-##   │   ├── Body (AnimatableBody3D + box - blocks the player)
-##   │   └── Interact (DoorInteract area - thicker than the body so the
-##   │                 interact ray meets it before the panel's collider)
-##   └── Spill nodes (optional under-door light rig; static, does not swing)
+## Swings around world up through the node's origin, so it does not care how
+## the mesh was authored or how the parent is oriented.
+##
+## Player presses swing the panel away from the side the player stands on
+## (swing_away), locked doors rattle, and the door exposes get_prompt /
+## get_prompt_anchor / set_focused for the world prompt.
 
 signal opened
 signal closed
+signal refused  ## tried while locked — good hook for a rattle and a scare
 
-const OPEN_DUR := 1.2
-const CLOSE_DUR := 1.0
-## Interact box thickness. Must exceed the panel body (~0.07 m) by enough that
-## the ray always hits the area first.
-const INTERACT_THICKNESS := 0.35
-const SPILL_COLOR := Color(1.0, 0.78, 0.50)
+## Degrees to swing. Flip the sign if the door opens into the wall.
+@export_range(-180.0, 180.0) var open_angle := 90.0
+## Seconds for a full swing. Partial swings are proportionally quicker.
+@export var swing_time := 1.4
+@export var locked := false
+## Use if the door was placed ajar and you want that angle treated as shut.
+## Set it to minus the angle it currently sits at.
+@export_range(-180.0, 180.0) var closed_offset := 0.0
+## Degrees along the opening direction the door hangs at before it is ever
+## touched. It swings fully open from here on the first interact, and from
+## then on closing lands on the true shut pose, never back on this one.
+@export_range(0.0, 180.0) var ajar_angle := 0.0
+## Player opens pick the swing sign so the panel moves away from the player.
+## Off, every open uses open_angle's own sign.
+@export var swing_away := true
 
-## A locked door only ever rattles. Dad's bedroom stays this way forever.
-var locked := false
-## The script may drive this door, but the player's interact is refused -
-## optionally with a subtitle line (the closet: the kid will not open it).
-var script_locked := false
-var blocked_line := ""
-var open_deg := 90.0
-## +1 / -1: which way around world Y the panel swings open.
-var swing := -1.0
+@export_group("Audio (optional)")
+@export var open_sound: AudioStream
+@export var close_sound: AudioStream
+@export var locked_sound: AudioStream
+## Volume for this door's sounds. 0 is the file as-is; -6 is roughly half as
+## loud, -12 quarter; -80 is silence.
+@export_range(-80.0, 6.0, 0.1, "suffix:dB") var volume_db := -6.0
 
-var _hinge: Node3D
-var _panel: MeshInstance3D
-var _body: AnimatableBody3D
-var _area: DoorInteract
-var _spill_sliver: MeshInstance3D
-var _spill_light: OmniLight3D
-var _spill_side := Vector3.ZERO
-var _spill_energy := 0.7
-var _spill_color := SPILL_COLOR
-var _spill_enabled := false
+const GLOW_COLOR := Color(1.0, 0.86, 0.55)
+const GLOW_ENERGY := 0.16
+const HANDLE_HEIGHT := 1.0
+const JIGGLE_DEG := 1.3
 
-var _closed_aabb := AABB()
-## World axis the closed panel is thin along, and hinge -> panel centre.
-var _normal := Vector3(0, 0, 1)
-var _hinge_to_center := Vector3(1, 0, 0)
-var _open := false
-var _animating := false
-## Resting angle in degrees when "closed" - nonzero while standing ajar.
-var _base_deg := 0.0
-## Direction the current/last open used (+1/-1). Player opens pick this per
-## press so the panel swings away from them; the director uses `swing`.
-var _open_dir := -1.0
+var is_open := false
+
+var _shut := Transform3D.IDENTITY
+var _swing := 0.0  # 0 = shut, 1 = fully open
+## +1/-1 on top of open_angle's sign, chosen per open by swing_away.
+var _dir := 1.0
+## Extra hinge angle for the locked rattle. Setter re-applies the pose.
+var _jiggle := 0.0:
+	set(value):
+		_jiggle = value
+		_apply(_swing)
 var _tween: Tween
+var _jiggle_tween: Tween
+var _glow_tween: Tween
+var _glow_mats: Array[StandardMaterial3D] = []
+var _focused := false
+## Shut-pose geometry in world space: hinge origin to panel centre (flat),
+## the axis the panel is thin along, and where the handle sits above the floor.
+var _hinge_to_center := Vector3(1, 0, 0)
+var _normal := Vector3(0, 0, 1)
+var _handle_y := 1.0
 
 
-## Adopts `panel` (must be inside the tree). The Door node itself must also be
-## in the tree before calling this.
-func setup(panel: MeshInstance3D) -> void:
-	_panel = panel
-	global_position = panel.global_position
-	global_basis = Basis.IDENTITY
+func _ready() -> void:
+	_shut = global_transform
+	if not is_zero_approx(closed_offset):
+		_shut.basis = _shut.basis.rotated(Vector3.UP, deg_to_rad(closed_offset))
+		global_transform = _shut
+	_measure()
 
-	_hinge = Node3D.new()
-	_hinge.name = "Hinge"
-	add_child(_hinge)
-	panel.reparent(_hinge, true)
+	# sync_to_physics re-asserts the body's own transform every physics tick,
+	# which silently cancels rotation applied through a parent — the mesh
+	# swings while the collider stays in the doorway. This script moves the
+	# whole hierarchy itself, so the body must follow its parent instead.
+	var has_body := false
+	for child in get_children():
+		if child is AnimatableBody3D:
+			child.sync_to_physics = false
+			child.collision_mask = 0
+			child.set_meta("door", self)
+			has_body = true
 
-	_closed_aabb = _world_aabb(panel)
-	_normal = Vector3(0, 0, 1) if _closed_aabb.size.z < _closed_aabb.size.x else Vector3(1, 0, 0)
-	_hinge_to_center = _closed_aabb.get_center() - global_position
-	_hinge_to_center.y = 0.0
-
-	_body = AnimatableBody3D.new()
-	_body.name = "Body"
-	# sync_to_physics only forwards the body's OWN local transform changes to the
-	# physics server. This body never moves locally, its parent (the hinge) does,
-	# so with sync on the collider stays at the closed pose forever and no door
-	# can be walked through. Off, CollisionObject3D pushes the global transform
-	# whenever the hinge rotates, which is what a scripted door needs.
-	_body.sync_to_physics = false
-	_body.collision_layer = 1
-	_body.collision_mask = 0
-	var body_shape := CollisionShape3D.new()
-	var body_box := BoxShape3D.new()
-	body_box.size = _closed_aabb.size
-	body_shape.shape = body_box
-	_body.add_child(body_shape)
-	_hinge.add_child(_body)
-	_body.global_position = _closed_aabb.get_center()
-
-	_area = DoorInteract.new()
-	_area.name = "Interact"
-	_area.door = self
-	var area_shape := CollisionShape3D.new()
-	var area_box := BoxShape3D.new()
-	var area_size := _closed_aabb.size
-	# Fatten the thin (thickness) axis; trim height a touch off the floor.
-	if area_size.x < area_size.z:
-		area_size.x = INTERACT_THICKNESS
-	else:
-		area_size.z = INTERACT_THICKNESS
-	area_size.y = maxf(area_size.y - 0.15, 0.5)
-	area_box.size = area_size
-	area_shape.shape = area_box
-	_area.add_child(area_shape)
-	_hinge.add_child(_area)
-	_area.global_position = _closed_aabb.get_center() + Vector3(0.0, 0.05, 0.0)
+	# A door without a hand-made collider builds one from its own mesh bounds,
+	# so attaching this script is all a new door needs.
+	if not has_body:
+		_build_collider()
 
 
-## Optional under-door light rig. `side` is the world direction pointing into
-## the room that sees the glow. Fakes what shadowless lights cannot do: light
-## that reads as leaking under a *closed* door (sliver) and flooding through an
-## *open* one (the light alone). `color` defaults to household warm, the
-## closet uses a cold one.
-func add_spill(side: Vector3, energy := 0.7, color := SPILL_COLOR) -> void:
-	_spill_side = side.normalized()
-	_spill_energy = energy
-	_spill_color = color
-
-	var width_axis := Vector3(0, 0, 1) if _closed_aabb.size.x < _closed_aabb.size.z \
-		else Vector3(1, 0, 0)
-	var width := absf(_closed_aabb.size.dot(width_axis))
-	var center := _closed_aabb.get_center()
-	var floor_y := _closed_aabb.position.y
-
-	_spill_sliver = MeshInstance3D.new()
-	_spill_sliver.name = "SpillSliver"
-	var box := BoxMesh.new()
-	box.size = width_axis * (width - 0.08) + Vector3(0.012, 0.012, 0.012) \
-		+ _spill_side.abs() * 0.10
-	var mat := StandardMaterial3D.new()
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.albedo_color = _spill_color
-	box.material = mat
-	_spill_sliver.mesh = box
-	add_child(_spill_sliver)
-	_spill_sliver.global_position = Vector3(center.x, floor_y + 0.012, center.z) \
-		+ _spill_side * 0.06
-
-	_spill_light = OmniLight3D.new()
-	_spill_light.name = "SpillLight"
-	_spill_light.light_color = _spill_color
-	# Wide enough that the floor pool leads the eye even when the door itself
-	# is occluded by an intervening doorway.
-	_spill_light.omni_range = 2.8
-	_spill_light.omni_attenuation = 1.8
-	_spill_light.shadow_enabled = false
-	add_child(_spill_light)
-	_spill_light.global_position = Vector3(center.x, floor_y + 0.3, center.z) \
-		+ _spill_side * 0.45
-
-	_update_spill()
-
-
-func set_spill(on: bool) -> void:
-	_spill_enabled = on
-	_update_spill()
-
-
-func is_open() -> bool:
-	return _open
-
-
-## `dir` +1/-1 overrides the configured swing for this open (player opens pass
-## the side they are on so the panel never sweeps through them). 0 = `swing`.
-func open(duration := OPEN_DUR, dir := 0.0) -> void:
-	if _open or _animating:
+## World-space shape of the shut panel: which way is thin, where the handle
+## side is. Read once in the shut pose so swing_away can pick a side later.
+func _measure() -> void:
+	if mesh == null:
 		return
-	_animating = true
-	_open_dir = swing if dir == 0.0 else signf(dir)
-	AudioBus.sfx_at("door_open", global_position, -4.0)
-	_update_spill()
-	_tween = create_tween().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN_OUT)
-	_tween.tween_property(_hinge, "rotation:y", deg_to_rad(open_deg * _open_dir), duration)
-	await _tween.finished
-	_animating = false
-	_open = true
-	_base_deg = 0.0
-	_update_spill()
-	opened.emit()
+	var aabb := MeshUtil.world_aabb(self)
+	_hinge_to_center = aabb.get_center() - _shut.origin
+	_hinge_to_center.y = 0.0
+	_normal = Vector3(0, 0, 1) if aabb.size.z < aabb.size.x else Vector3(1, 0, 0)
+	_handle_y = aabb.position.y + HANDLE_HEIGHT - _shut.origin.y
 
 
-## Rotation sign that swings the panel away from `pos`. Which sign moves the
-## panel toward +normal depends on where the hinge sits, so it is derived from
-## the geometry rather than assumed.
+func _build_collider() -> void:
+	var aabb := get_aabb()
+	var box := BoxShape3D.new()
+	# Floor of 2cm per axis (in WORLD units) keeps the thin axis of a door
+	# panel raycastable. The aabb is in local units, and imported meshes here
+	# carry a 100x node scale, so the floor must be divided back into local
+	# space per axis — a flat 0.02 local floor would become a 2m slab.
+	var world_scale := global_transform.basis.get_scale().abs()
+	var floor_local := Vector3(
+		0.02 / maxf(world_scale.x, 0.001),
+		0.02 / maxf(world_scale.y, 0.001),
+		0.02 / maxf(world_scale.z, 0.001))
+	box.size = aabb.size.max(floor_local)
+
+	var shape := CollisionShape3D.new()
+	shape.shape = box
+	shape.position = aabb.get_center()
+
+	var body := AnimatableBody3D.new()
+	body.sync_to_physics = false
+	body.collision_mask = 0
+	body.set_meta("door", self)
+	body.add_child(shape)
+	add_child(body)
+
+	if not is_zero_approx(ajar_angle) and not is_zero_approx(open_angle):
+		_apply(ajar_angle / open_angle)
+
+
+## Called by the player's interact raycast.
+func interact(by: Node = null) -> void:
+	if locked:
+		_play(locked_sound)
+		jiggle()
+		refused.emit()
+		return
+	if not is_open and swing_away and by is Node3D:
+		var new_dir := swing_away_from((by as Node3D).global_position)
+		if new_dir != _dir:
+			# keep the current world angle continuous under the new sign, so an
+			# ajar door swings back through the frame instead of snapping
+			_swing = -_swing
+			_dir = new_dir
+	set_open(not is_open)
+
+
+func set_open(value: bool) -> void:
+	is_open = value
+	_play(open_sound if value else close_sound)
+
+	var target := 1.0 if value else 0.0
+	if _tween != null and _tween.is_valid():
+		_tween.kill()
+
+	# Scale the duration to how far is actually left, so interrupting a swing
+	# half way does not make the rest of it crawl.
+	var duration := swing_time * absf(target - _swing)
+	if is_zero_approx(duration):
+		_apply(target)
+		_announce()
+		return
+
+	_tween = create_tween()
+	# Physics step, not idle: the collider is an AnimatableBody3D, and moving it
+	# out of sync with the physics tick makes it stutter and miss contacts.
+	_tween.set_process_mode(Tween.TWEEN_PROCESS_PHYSICS)
+	_tween.tween_method(_apply, _swing, target, duration) \
+		.set_trans(Tween.TRANS_CUBIC) \
+		.set_ease(Tween.EASE_OUT if value else Tween.EASE_IN)
+	_tween.tween_callback(_announce)
+
+
+## Snap to a state with no animation — for level setup or a jump scare.
+func snap_open(value: bool) -> void:
+	if _tween != null and _tween.is_valid():
+		_tween.kill()
+	is_open = value
+	_apply(1.0 if value else 0.0)
+	_announce()
+
+
+## Sign (+1/-1) that swings the panel away from `pos`. Which way a positive
+## rotation moves the panel depends on where the hinge sits, so it is read
+## from the geometry rather than assumed.
 func swing_away_from(pos: Vector3) -> float:
-	var side := signf((pos - global_position).dot(_normal))
+	var side := signf((pos - _shut.origin).dot(_normal))
 	if side == 0.0:
 		side = 1.0
 	var plus_moves_to := signf(_hinge_to_center.rotated(Vector3.UP, 0.2).dot(_normal))
 	if plus_moves_to == 0.0:
 		plus_moves_to = 1.0
-	return -side * plus_moves_to
+	return -side * plus_moves_to * signf(open_angle if open_angle != 0.0 else 1.0)
 
 
-func close(duration := CLOSE_DUR) -> void:
-	if not _open or _animating:
-		return
-	_animating = true
-	AudioBus.sfx_at("door_close", global_position, -6.0)
-	_tween = create_tween().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN_OUT)
-	_tween.tween_property(_hinge, "rotation:y", 0.0, duration)
-	await _tween.finished
-	AudioBus.sfx_at("door_latch", global_position, -8.0)
-	_animating = false
-	_open = false
-	_base_deg = 0.0
-	_update_spill()
-	closed.emit()
-
-
-## Drift to a slightly-open resting pose (the closet, mid-Act 1). Not "open":
-## the prompt still reads Open and open() animates from here.
-func set_ajar(deg := 6.0, duration := 0.6) -> void:
-	if _open or _animating:
-		return
-	_base_deg = deg
-	var t := create_tween().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-	t.tween_property(_hinge, "rotation:y", deg_to_rad(deg * swing), duration)
-
-
-## Instant ajar, for initial placement only.
-func set_ajar_instant(deg: float) -> void:
-	_base_deg = deg
-	_hinge.rotation.y = deg_to_rad(deg * swing)
-
-
-## Instant fully open, for initial placement. `dir` +1/-1, 0 = `swing`.
-func set_open_instant(dir := 0.0) -> void:
-	_open_dir = swing if dir == 0.0 else signf(dir)
-	_hinge.rotation.y = deg_to_rad(open_deg * _open_dir)
-	_open = true
-	_base_deg = 0.0
-	_update_spill()
-
-
-## Small shudder without unlatching. Silent on purpose, the caller plays
-## whatever sound fits the moment.
-func shake(intensity := 1.0) -> void:
-	if _animating:
-		return
-	var base := deg_to_rad(_base_deg * swing)
-	var amp := deg_to_rad(0.9) * intensity * swing
-	var t := create_tween()
-	t.tween_property(_hinge, "rotation:y", base + amp, 0.05)
-	t.tween_property(_hinge, "rotation:y", base + amp * 0.3, 0.06)
-	t.tween_property(_hinge, "rotation:y", base + amp * 0.7, 0.05)
-	t.tween_property(_hinge, "rotation:y", base, 0.12)
-
-
-## Locked-door feedback rattle.
+## Locked-door rattle around the hinge. Sound is the caller's (interact plays
+## locked_sound).
 func jiggle(intensity := 1.0) -> void:
-	if _animating:
-		return
-	AudioBus.sfx_at("door_locked", global_position, -6.0)
-	var base := deg_to_rad(_base_deg * swing)
-	var amp := deg_to_rad(1.3) * intensity * swing
-	var t := create_tween()
-	t.tween_property(_hinge, "rotation:y", base + amp, 0.06)
-	t.tween_property(_hinge, "rotation:y", base, 0.05)
-	t.tween_property(_hinge, "rotation:y", base + amp * 0.6, 0.05)
-	t.tween_property(_hinge, "rotation:y", base, 0.08)
+	if _jiggle_tween != null and _jiggle_tween.is_valid():
+		_jiggle_tween.kill()
+	var amp := deg_to_rad(JIGGLE_DEG) * intensity
+	_jiggle_tween = create_tween()
+	_jiggle_tween.tween_property(self, "_jiggle", amp, 0.06)
+	_jiggle_tween.tween_property(self, "_jiggle", 0.0, 0.05)
+	_jiggle_tween.tween_property(self, "_jiggle", amp * 0.6, 0.05)
+	_jiggle_tween.tween_property(self, "_jiggle", 0.0, 0.08)
 
 
-## What the player's interact press does. The awaitable open()/close() are for
-## the director; from the player they are fire-and-forget. Opens swing away
-## from the side the player is standing on.
-func player_interact(by: Node3D = null) -> void:
-	if _animating:
-		return
+# --- prompt hooks --------------------------------------------------------
+
+func can_interact() -> bool:
+	return true
+
+
+func get_prompt() -> String:
 	if locked:
-		jiggle()
+		return "Locked"
+	return "Close" if is_open else "Open"
+
+
+## Handle side of the panel at its current angle, about a metre up.
+func get_prompt_anchor() -> Vector3:
+	var ang := deg_to_rad(open_angle * _swing * _dir) + _jiggle
+	var handle := _hinge_to_center.rotated(Vector3.UP, ang) * 1.7
+	return _shut.origin + handle + Vector3(0.0, _handle_y, 0.0)
+
+
+## Hover glow: a little emission on this panel only, faded in and out.
+func set_focused(on: bool) -> void:
+	if _focused == on:
 		return
-	if script_locked:
-		if blocked_line != "":
-			Subtitles.show_line(blocked_line, 2.2)
-		jiggle(0.4)
-		return
-	if _open:
-		close()
-	elif by:
-		open(OPEN_DUR, swing_away_from(by.global_position))
+	_focused = on
+	if _glow_mats.is_empty():
+		_glow_mats = MeshUtil.make_glow_overrides(self, GLOW_COLOR)
+	if _glow_tween != null and _glow_tween.is_valid():
+		_glow_tween.kill()
+	_glow_tween = create_tween().set_parallel(true)
+	for m in _glow_mats:
+		_glow_tween.tween_property(m, "emission_energy_multiplier",
+			GLOW_ENERGY if on else 0.0, 0.25 if on else 0.35)
+
+
+# --- internals -----------------------------------------------------------
+
+func _apply(t: float) -> void:
+	_swing = t
+	# Rebuild from the shut pose every frame rather than accumulating rotations,
+	# so the hinge cannot drift and the mesh's 100x import scale is preserved.
+	global_transform = Transform3D(
+		_shut.basis.rotated(Vector3.UP, deg_to_rad(open_angle * t * _dir) + _jiggle),
+		_shut.origin)
+
+
+func _announce() -> void:
+	if is_open:
+		opened.emit()
 	else:
-		open()
+		closed.emit()
 
 
-func _update_spill() -> void:
-	if _spill_sliver == null:
+func _play(stream: AudioStream) -> void:
+	if stream == null:
 		return
-	if not _spill_enabled:
-		_spill_sliver.visible = false
-		_spill_light.visible = false
-		return
-	# Closed: a strip under the door. Open (or opening): the strip is gone and
-	# the room-side light carries the flood.
-	var closed_now := not _open and not _animating
-	_spill_sliver.visible = closed_now
-	_spill_light.visible = true
-	_spill_light.light_energy = _spill_energy * (0.55 if closed_now else 1.0)
-
-
-static func _world_aabb(mi: MeshInstance3D) -> AABB:
-	var local: AABB = mi.mesh.get_aabb()
-	var xf := mi.global_transform
-	var result := AABB(xf * local.get_endpoint(0), Vector3.ZERO)
-	for i in range(1, 8):
-		result = result.expand(xf * local.get_endpoint(i))
-	return result
-
-
-## The interact target. Thicker than the panel's collider so the ray (which now
-## also collides with bodies) reaches it first.
-class DoorInteract:
-	extends Interactable
-
-	var door: Door
-
-	func _ready() -> void:
-		super()
-
-	func get_prompt() -> String:
-		var ar := GameState.language == "ar"
-		if door.locked:
-			return "مقفول" if ar else "Locked"
-		if door.is_open():
-			return "أغلق" if ar else "Close"
-		return "افتح" if ar else "Open"
-
-	func _can_interact() -> bool:
-		return not door._animating
-
-	func _on_interact(by: Node3D) -> void:
-		door.player_interact(by)
+	var player := AudioStreamPlayer3D.new()
+	player.stream = stream
+	player.volume_db = volume_db
+	add_child(player)
+	player.play()
+	player.finished.connect(player.queue_free)

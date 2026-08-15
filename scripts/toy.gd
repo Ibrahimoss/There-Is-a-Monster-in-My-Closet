@@ -19,9 +19,9 @@ func _ready() -> void:
 	if meshes.is_empty():
 		push_warning("Toy: bear.glb has no meshes")
 		return
-	var world := Door._world_aabb(meshes[0])
+	var world := MeshUtil.world_aabb(meshes[0])
 	for i in range(1, meshes.size()):
-		world = world.merge(Door._world_aabb(meshes[i]))
+		world = world.merge(MeshUtil.world_aabb(meshes[i]))
 	var s := HEIGHT / maxf(world.size.y, 0.001)
 	_model.scale = Vector3.ONE * s
 	var center := (world.get_center() - global_position) * s

@@ -1,8 +1,8 @@
 extends Node
-## Self-review tool: boots the real house scene, flies a camera through a fixed
+## Self-review tool: boots the level scene, flies a camera through a fixed
 ## shot list, saves PNGs, quits. Run windowed (needs a GPU context):
 ##   godot --path . res://tools/ReviewShots.tscn
-## Never shipped; audio stays locked so the run is silent.
+## Never shipped.
 
 const SHOTS := [
 	[Vector3(5.3, 4.95, -10.7), Vector3(6.7, 4.9, -9.3), "01_spawn_toward_closet"],
@@ -24,7 +24,8 @@ func _ready() -> void:
 	out_dir = OS.get_environment("REVIEW_OUT")
 	if out_dir.is_empty():
 		out_dir = "user://review"
-	var house := (load("res://scenes/house/House.tscn") as PackedScene).instantiate()
+	AudioBus.unlock()
+	var house := (load("res://real_world.tscn") as PackedScene).instantiate()
 	add_child(house)
 	var cam := Camera3D.new()
 	cam.fov = 75.0

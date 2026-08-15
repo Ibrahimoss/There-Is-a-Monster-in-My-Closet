@@ -11,3 +11,7 @@ source of truth for that list.
 | Wood/soft impacts (`assets/audio/impacts`), wood footsteps (`assets/audio/steps`) | [Kenney — Impact Sounds](https://kenney.nl/assets/impact-sounds) | Kenney | CC0 |
 | Night crickets ambience (`assets/audio/ambience/crickets_night.mp3`) | [OpenGameArt — Crickets Ambient Noise](https://opengameart.org/content/crickets-ambient-noise-loopable) | Wolfgang_ (Ted Kerr) | CC0 |
 | Toy bear model (`assets/toy/bear.glb`) | [Poly Pizza — Bear](https://poly.pizza/m/3Eb9oLfZYIc) | jiang liu | **CC-BY 3.0 — attribution REQUIRED on the itch page** |
+| Footsteps (`assets/footsteps/step_01..21.wav`) | (added by Ibrahim, source not recorded, confirm before the itch page) | | |
+| Door creak, AC hum, cricket (`assets/audio/universfield-*.mp3`, `flutie8211-*.mp3`, `alex_jauk-*.mp3`) | Pixabay uploads by those usernames (confirm) | universfield, flutie8211, alex_jauk | Pixabay Content License (no attribution required, credit anyway) |
+| Amazdoom font (`assets/fonts/Amazdoomleft*.ttf`) | [fontspace](https://www.fontspace.com/amaz-doom-font-f9098) | | Freeware (personal use), see `assets/fonts/info.txt` |
+| Keyboard / mouse icons (`assets/icons/`) | Kenney Input Prompts (confirm) | Kenney | CC0 |

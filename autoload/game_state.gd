@@ -16,7 +16,8 @@ enum Act { BEDTIME, CLOSET, NIGHTMARE, BATHROOM, WAKE }
 enum ToySpot { BEHIND_PANEL, UNDER_SINK, IN_CISTERN }
 
 var current_act := Act.BEDTIME
-var language := "ar"
+## Prompt language for code-built interactables. Captions are English only.
+var language := "en"
 var toy_location := ToySpot.BEHIND_PANEL
 
 ## Set when the kid takes the toy at the top of the hoard. One bool, and it's

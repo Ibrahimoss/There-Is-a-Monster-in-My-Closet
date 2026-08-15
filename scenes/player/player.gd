@@ -10,8 +10,17 @@ extends CharacterBody3D
 ##
 ## No `class_name` on purpose, other systems find the player through the
 ## "player" group.
+##
+## Attaches to any CharacterBody3D. If the node has no Head, the rig
+## (Head -> CamRig -> Camera -> InteractRay) is built at runtime around
+## whatever Camera3D and CollisionShape3D it already has, so the level scene
+## keeps its bare player node and this script owns the feel.
+##
+## A target is any Node with interact(by); get_prompt(), can_interact() and
+## the focus/anchor hooks are optional. Interactable areas and door bodies
+## (walk up to the node that has interact) both work.
 
-signal target_changed(target: Interactable)
+signal target_changed(target: Node)
 signal entered_bed
 signal covers_changed(under: bool)
 
@@ -71,6 +80,10 @@ const FOV_RUN := 2.5
 @export var can_move := true
 @export var can_look := true
 
+## Set by cutscenes (EyeOpenIntro, WakeUpSequence): no move, look or
+## interact until end_cinematic().
+var cinematic := false
+
 ## Under the covers: no move/look, screen goes almost black, the scene is
 ## carried by audio and the light strip through the blanket gap.
 var under_covers := false: set = _set_under_covers
@@ -82,16 +95,20 @@ var in_bed := false
 ## nothing until the scene lets go.
 var covers_locked := false
 
-@onready var _head: Node3D = $Head
-@onready var _camera: Camera3D = $Head/Camera
-@onready var _ray: RayCast3D = $Head/Camera/InteractRay
+## The interact ray, public for UI that wants to peek at it.
+var ray: RayCast3D
+
+var _head: Node3D
+var _rig: Node3D
+var _camera: Camera3D
+var _ray: RayCast3D
 
 var _pitch := 0.0
 var _crouching := false
 var _running := false
 var _stamina := STAMINA_MAX
 var _exhausted := false
-var _target: Interactable = null
+var _target: Node = null
 
 var _time := 0.0
 var _bob_phase := 0.0
@@ -108,6 +125,109 @@ var _prev_vy := 0.0
 
 func _ready() -> void:
 	add_to_group("player")
+	_build_rig()
+	HUD.set_active(true)
+	# the level's colliders may not be in the tree yet
+	_snap_to_floor.call_deferred()
+	Presence.on_player_ready.call_deferred(self)
+
+
+## Head -> CamRig -> Camera -> InteractRay. Reuses a Camera3D and a
+## CollisionShape3D if the node already has them (the level scene's bare
+## player), otherwise makes them.
+func _build_rig() -> void:
+	_head = get_node_or_null("Head") as Node3D
+	if _head == null:
+		_head = Node3D.new()
+		_head.name = "Head"
+		add_child(_head)
+		_head.position = Vector3(0.0, STAND_EYE, 0.0)
+
+	var cam: Camera3D = null
+	for c in get_children():
+		if c is Camera3D:
+			cam = c
+			break
+	if cam == null:
+		cam = _head.get_node_or_null("Camera") as Camera3D
+		if cam == null:
+			cam = _head.get_node_or_null("CamRig/Camera") as Camera3D
+	if cam == null:
+		cam = Camera3D.new()
+		cam.fov = FOV_BASE
+		cam.near = 0.05
+		cam.far = 60.0
+		_head.add_child(cam)
+	cam.name = "Camera"
+
+	_rig = _head.get_node_or_null("CamRig") as Node3D
+	if _rig == null:
+		_rig = Node3D.new()
+		_rig.name = "CamRig"
+		_head.add_child(_rig)
+	if cam.get_parent() != _rig:
+		cam.reparent(_rig, false)
+	cam.transform = Transform3D.IDENTITY
+	cam.current = true
+	_camera = cam
+
+	_ray = _camera.get_node_or_null("InteractRay") as RayCast3D
+	if _ray == null:
+		_ray = RayCast3D.new()
+		_ray.name = "InteractRay"
+		_ray.target_position = Vector3(0.0, 0.0, -2.2)
+		_ray.collision_mask = 5
+		_ray.collide_with_areas = true
+		_ray.collide_with_bodies = true
+		_ray.hit_from_inside = true
+		_camera.add_child(_ray)
+	ray = _ray
+
+	# kid capsule with the origin at the feet, whatever shape the node came with
+	var cs: CollisionShape3D = null
+	for c in get_children():
+		if c is CollisionShape3D:
+			cs = c
+			break
+	if cs == null:
+		cs = CollisionShape3D.new()
+		add_child(cs)
+	var capsule := cs.shape as CapsuleShape3D
+	if capsule == null or not is_equal_approx(capsule.radius, 0.24) or cs.scale != Vector3.ONE:
+		capsule = CapsuleShape3D.new()
+		capsule.radius = 0.24
+		capsule.height = 1.25
+		cs.shape = capsule
+		cs.transform = Transform3D(Basis.IDENTITY, Vector3(0.0, 0.625, 0.0))
+	collision_layer = 2
+	collision_mask = 1
+
+
+func _snap_to_floor() -> void:
+	var space := get_world_3d().direct_space_state
+	var q := PhysicsRayQueryParameters3D.create(
+		global_position + Vector3(0.0, 0.5, 0.0), global_position - Vector3(0.0, 3.0, 0.0), 1)
+	q.exclude = [get_rid()]
+	var hit := space.intersect_ray(q)
+	if not hit.is_empty():
+		global_position.y = (hit["position"] as Vector3).y + 0.01
+		velocity = Vector3.ZERO
+
+
+## Cutscene hooks. The camera pose is left to whoever runs the scene.
+func begin_cinematic() -> void:
+	cinematic = true
+	velocity = Vector3.ZERO
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+
+func end_cinematic() -> void:
+	cinematic = false
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+
+func get_camera() -> Camera3D:
+	return _camera
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -262,43 +382,77 @@ func _update_feel(input: Vector2, speed: float, delta: float) -> void:
 
 
 func _moving() -> bool:
-	return can_move and not under_covers
+	return can_move and not under_covers and not cinematic
 
 
 func _looking() -> bool:
 	return (
 		can_look
 		and not under_covers
+		and not cinematic
 		and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
 	)
 
 
 func _update_target() -> void:
-	var found: Interactable = null
-	if not under_covers and _ray.is_colliding():
-		var hit := _ray.get_collider()
-		if hit is Interactable and hit.can_interact():
-			found = hit
+	var found: Node = null
+	if not under_covers and not cinematic and _ray.is_colliding():
+		found = _resolve_target(_ray.get_collider())
 	if found != _target:
+		if _target != null and is_instance_valid(_target) and _target.has_method("set_focused"):
+			_target.call("set_focused", false)
 		_target = found
+		if _target != null and _target.has_method("set_focused"):
+			_target.call("set_focused", true)
 		target_changed.emit(_target)
+		_refresh_prompt()
+
+
+## The ray hit something. Interactable areas answer for themselves; anything
+## else is walked up to the first ancestor with interact() (a door body under
+## its Door, a prop's collider under the prop).
+func _resolve_target(hit: Object) -> Node:
+	if hit is Interactable:
+		return hit if (hit as Interactable).can_interact() else null
+	var n := hit as Node
+	while n != null and not n.has_method("interact"):
+		n = n.get_parent()
+	if n == null:
+		return null
+	if n.has_method("can_interact") and not bool(n.call("can_interact")):
+		return null
+	return n
+
+
+func _refresh_prompt() -> void:
+	if _target == null:
+		HUD.hide_prompt()
+		return
+	var text := "Use"
+	if _target.has_method("get_prompt"):
+		text = String(_target.call("get_prompt"))
+	HUD.show_prompt(text, "R")
 
 
 func _try_interact() -> void:
-	if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+	if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED or cinematic:
 		return
-	if _target and _target.can_interact():
-		_target.interact(self)
-		# The interaction may have consumed a one-shot; refresh so the prompt
-		# disappears on the same frame rather than a frame late.
-		_update_target()
-		# The interaction may also have changed the prompt on the SAME target
-		# (a door flipping Open → Close). `_update_target` only emits on target
-		# change, so re-emit unconditionally for the HUD to re-read the prompt.
-		target_changed.emit(_target)
+	if _target == null:
+		return
+	if _target.has_method("can_interact") and not bool(_target.call("can_interact")):
+		return
+	_target.call("interact", self)
+	# The interaction may have consumed a one-shot; refresh so the prompt
+	# disappears on the same frame rather than a frame late.
+	_update_target()
+	# The interaction may also have changed the prompt on the SAME target
+	# (a door flipping Open to Close). `_update_target` only emits on target
+	# change, so re-read unconditionally.
+	target_changed.emit(_target)
+	_refresh_prompt()
 
 
-func get_target() -> Interactable:
+func get_target() -> Node:
 	return _target
 
 

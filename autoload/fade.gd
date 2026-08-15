@@ -34,6 +34,16 @@ func set_black() -> void:
 	_rect.color.a = 1.0
 
 
+## Snap clear a couple of frames from now, once a scene change has landed,
+## for scenes that bring their own opening (the eyelid intro starts black).
+func clear_deferred() -> void:
+	await get_tree().process_frame
+	await get_tree().process_frame
+	if _tween and _tween.is_valid():
+		_tween.kill()
+	_rect.color.a = 0.0
+
+
 func _to(alpha: float, duration: float) -> void:
 	if _tween and _tween.is_valid():
 		_tween.kill()

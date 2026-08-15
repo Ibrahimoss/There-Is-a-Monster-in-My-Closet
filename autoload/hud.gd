@@ -6,16 +6,20 @@ extends CanvasLayer
 ## cutscene scenes leave it off. Stamina has no bar anywhere: it is darkness
 ## closing in from the edges, plus the player's audible/visible breathing.
 ##
-## Draw order (bottom → top): grain, stamina, seen, reticle/prompt, flash.
+## Two layers: this one (9) sits under the Doom filter (90) so the vignettes
+## and covers get crushed with the image; `_top` (96) carries the reticle and
+## prompt above the filter so text stays readable, in the same font family as
+## the captions (95).
 
 const UiKit := preload("res://scripts/ui_kit.gd")
+const DOOM_FONT := preload("res://assets/fonts/Amazdoomleft-epw3.ttf")
+const TOP_LAYER := 96
 
-## Constant film grain + a soft permanent vignette, cheap way to not look
-## like raw engine output.
+## Soft permanent vignette. Grain is off: the Doom filter dithers already.
 const GRAIN_SHADER := """
 shader_type canvas_item;
-uniform float grain_strength = 0.06;
-uniform float vignette_strength = 0.26;
+uniform float grain_strength = 0.0;
+uniform float vignette_strength = 0.22;
 void fragment() {
 	float g = fract(sin(dot(
 		UV * vec2(1687.0, 921.0) + vec2(TIME * 61.7, TIME * 41.3),
@@ -75,6 +79,7 @@ void fragment() {
 const DOT_IDLE := Color(1, 1, 1, 0.16)
 const DOT_ACTIVE := Color(0.93, 0.78, 0.52, 0.9)
 
+var _top: CanvasLayer
 var _grain: ColorRect
 var _stamina_rect: ColorRect
 var _stamina_mat: ShaderMaterial
@@ -96,6 +101,12 @@ func _ready() -> void:
 	layer = 9
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	visible = false
+
+	_top = CanvasLayer.new()
+	_top.name = "Top"
+	_top.layer = TOP_LAYER
+	_top.visible = false
+	add_child(_top)
 
 	_grain = _shader_rect(GRAIN_SHADER)
 	_stamina_rect = _shader_rect(STAMINA_SHADER)
@@ -127,7 +138,7 @@ func _build_reticle() -> void:
 	var dot_center := CenterContainer.new()
 	dot_center.set_anchors_preset(Control.PRESET_FULL_RECT)
 	dot_center.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(dot_center)
+	_top.add_child(dot_center)
 
 	_dot = ColorRect.new()
 	_dot.custom_minimum_size = Vector2(3, 3)
@@ -135,11 +146,11 @@ func _build_reticle() -> void:
 	_dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	dot_center.add_child(_dot)
 
-	# Key hint + localized prompt, hanging just below centre.
+	# Key hint + prompt, hanging just below centre. Doom face, caption outline.
 	var center := CenterContainer.new()
 	center.set_anchors_preset(Control.PRESET_FULL_RECT)
 	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(center)
+	_top.add_child(center)
 
 	var box := VBoxContainer.new()
 	box.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -152,15 +163,29 @@ func _build_reticle() -> void:
 	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_child(spacer)
 
-	_key_hint = UiKit.make_label("F", 13, UiKit.WARM)
+	_key_hint = _doom_label("R", 18, UiKit.WARM)
 	_key_hint.visible = false
 	box.add_child(_key_hint)
 
-	_prompt = UiKit.make_label("", 19, UiKit.INK)
-	_prompt.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
-	_prompt.add_theme_constant_override("outline_size", 6)
+	_prompt = _doom_label("", 26, Color(1.0, 1.0, 0.93))
 	_prompt.visible = false
 	box.add_child(_prompt)
+
+
+static func _doom_label(text: String, size: int, color: Color) -> Label:
+	var l := Label.new()
+	l.text = text
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	l.add_theme_font_override("font", DOOM_FONT)
+	l.add_theme_font_size_override("font_size", size)
+	l.add_theme_color_override("font_color", color)
+	l.add_theme_color_override("font_outline_color", Color(0.09, 0.055, 0.03, 1.0))
+	l.add_theme_constant_override("outline_size", 8)
+	l.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.6))
+	l.add_theme_constant_override("shadow_offset_x", 2)
+	l.add_theme_constant_override("shadow_offset_y", 2)
+	return l
 
 
 func _build_flash() -> void:
@@ -174,11 +199,12 @@ func _build_flash() -> void:
 ## Gameplay scenes turn the HUD on; menus turn it off.
 func set_active(active: bool) -> void:
 	visible = active
+	_top.visible = active
 	if not active:
 		clear()
 
 
-func show_prompt(text: String, key := "F") -> void:
+func show_prompt(text: String, key := "R") -> void:
 	if text.is_empty():
 		hide_prompt()
 		return
