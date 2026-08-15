@@ -20,19 +20,31 @@ const PLAYER_SCENE := preload("res://scenes/player/Player.tscn")
 const MOON := Color(0.58, 0.66, 0.92)
 const WARM := Color(1.0, 0.78, 0.50)
 
-## Just inside upstairs windows - moonlight pooling on the floor.
+## Just inside upstairs windows - moonlight pooling on the floor. The parents'
+## room is behind a locked door now, so no pool there.
 const WINDOW_POOLS: Array[Vector3] = [
 	Vector3(5.4, 5.2, -13.2),   # kid's bedroom window
 	Vector3(9.2, 5.2, -6.0),    # bathtub bathroom window
-	Vector3(-3.4, 5.2, -7.9),   # parents' side window
 	Vector3(9.2, 1.8, -6.0),    # ground floor window
 ]
+
+## Stair gate: closes the gap in the east banister where the top step is.
+const GATE_POS := Vector3(4.93, 3.73, -5.41)
+const GATE_LENGTH := 1.22
+
+## Hall light levels. LOW is act 0: enough to see the east landing, dim enough
+## that the lit bathroom down the west hall is the brightest thing in view.
+## FULL is dad switching it on in act 1.
+const HALL_LOW := 0.5
+const HALL_FULL := 1.1
 
 var _player: CharacterBody3D
 var _house_visual: Node3D
 var _doors: DoorSystem
 var _hall_light: OmniLight3D
+var _hall_level := HALL_LOW
 var _bedside_lamp: OmniLight3D
+var _gate: StairGate
 var _director: OpeningDirector
 var _time := 0.0
 
@@ -42,6 +54,7 @@ func _ready() -> void:
 	_build_house()
 	_build_colliders()
 	_build_doors()
+	_build_gate()
 	_build_lights()
 	_spawn_player()
 	HUD.set_active(true)
@@ -62,7 +75,7 @@ func _process(delta: float) -> void:
 	# Tiny flicker so the house never feels frozen. Gated on visibility so the
 	# director can turn the light off without the flicker re-enabling it.
 	if _hall_light.visible:
-		_hall_light.light_energy = 1.1 * (
+		_hall_light.light_energy = _hall_level * (
 			0.94 + 0.04 * sin(_time * 2.7) + 0.02 * sin(_time * 6.3 + 1.2)
 		)
 
@@ -130,6 +143,16 @@ func _build_doors() -> void:
 	_doors.build(_house_visual)
 
 
+func _build_gate() -> void:
+	var rail := _house_visual.find_child("railing_ladders_01", true, false) as MeshInstance3D
+	var wood: Material = rail.get_active_material(0) if rail else null
+	_gate = StairGate.new()
+	_gate.name = "StairGate"
+	add_child(_gate)
+	_gate.global_position = GATE_POS
+	_gate.setup(GATE_LENGTH, wood)
+
+
 ## The collider FBX carries floors, the wall shell, the stair ramp and
 ## per-furniture boxes as plain meshes. Convert each to a static trimesh body
 ## and hide the meshes.
@@ -167,26 +190,26 @@ func _build_lights() -> void:
 		moon.position = pos
 		add_child(moon)
 
-	# Hallway light. Placed east of the linen closet door (x 2.9) so the face
-	# you see leaving the bedroom is actually lit, not a black slab. Dad's
-	# corridor to the west falls out of range and goes dark, which is fine.
+	# Hallway light, at the corner where the landing turns down past the
+	# stairwell: reaches the kid's door, the stair gate and the far bedroom
+	# door, and falls off before the west hall so the lit bathroom down there
+	# stays the brightest thing you can see from the bedroom door.
 	_hall_light = OmniLight3D.new()
 	_hall_light.light_color = WARM
-	_hall_light.light_energy = 1.1
-	_hall_light.omni_range = 6.5
+	_hall_light.light_energy = HALL_LOW
+	_hall_light.omni_range = 5.2
 	_hall_light.omni_attenuation = 1.6
 	_hall_light.shadow_enabled = false
-	_hall_light.position = Vector3(3.6, 5.8, -8.0)
+	_hall_light.position = Vector3(4.7, 5.8, -6.9)
 	add_child(_hall_light)
 
-	# Bedside lamp in the kid's room.
+	# Bedside lamp in the kid's room. Range reaches the closet door so the
+	# closet reads as a door while the lamp is on, not a black slab.
 	_bedside_lamp = OmniLight3D.new()
 	_bedside_lamp.light_color = Color(1.0, 0.72, 0.42)
-	_bedside_lamp.light_energy = 0.85
-	# Range covers the closet door so it reads while the lamp is on. After
-	# lights-out it can go black, that's wanted.
-	_bedside_lamp.omni_range = 4.2
-	_bedside_lamp.omni_attenuation = 1.9
+	_bedside_lamp.light_energy = 0.9
+	_bedside_lamp.omni_range = 5.6
+	_bedside_lamp.omni_attenuation = 1.55
 	_bedside_lamp.shadow_enabled = false
 	_bedside_lamp.position = Vector3(7.1, 4.9, -13.0)
 	add_child(_bedside_lamp)
@@ -194,6 +217,12 @@ func _build_lights() -> void:
 
 func set_hall_light(on: bool) -> void:
 	_hall_light.visible = on
+
+
+## Dad's hand on the switch: LOW is the night setting, FULL is him turning it
+## up when he comes to the door.
+func set_hall_light_full(full: bool) -> void:
+	_hall_level = HALL_FULL if full else HALL_LOW
 
 
 func set_bedside_lamp(on: bool) -> void:

@@ -13,7 +13,10 @@ const LAYER := 4
 
 @export var prompt_ar := "تفاعل"
 @export var prompt_en := "Interact"
-@export var enabled := true
+## Disabled interactables drop off the ray layer entirely. The ray stops at the
+## first shape it meets, so an inert box left on the layer would still eat the
+## ray and hide whatever sits behind it.
+@export var enabled := true: set = _set_enabled
 ## Interactables that should only ever fire once (picking up the toy, opening
 ## the panel). Saves every subclass reimplementing the same guard.
 @export var one_shot := false
@@ -22,9 +25,14 @@ var _used := false
 
 
 func _ready() -> void:
-	collision_layer = LAYER
+	collision_layer = LAYER if enabled else 0
 	collision_mask = 0  # Detected by raycast only; detects nothing itself.
 	monitoring = false
+
+
+func _set_enabled(value: bool) -> void:
+	enabled = value
+	collision_layer = LAYER if (value and not (one_shot and _used)) else 0
 
 
 func can_interact() -> bool:
@@ -39,6 +47,8 @@ func interact(by: Node3D) -> void:
 	if not can_interact():
 		return
 	_used = true
+	if one_shot:
+		collision_layer = 0
 	interacted.emit(by)
 	_on_interact(by)
 

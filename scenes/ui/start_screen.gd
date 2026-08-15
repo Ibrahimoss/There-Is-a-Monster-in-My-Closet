@@ -192,6 +192,19 @@ func _build_menu_stack() -> void:
 	hint_pad.custom_minimum_size = Vector2(0, 6)
 	box.add_child(hint_pad)
 
+	# Controls, once, here. Nothing in the game itself explains keys beyond
+	# the prompt that appears when a thing can be used.
+	var keys := VBoxContainer.new()
+	keys.add_theme_constant_override("separation", 1)
+	box.add_child(keys)
+	for line: String in [
+		"WASD حركة  ·  F تفاعل  ·  Shift ركض  ·  Space اختباء",
+		"WASD move  ·  F use  ·  Shift run  ·  Space hide",
+	]:
+		var l := UiKit.make_label(line, 12, UiKit.INK_FAINT)
+		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+		keys.add_child(l)
+
 	box.add_child(UiKit.make_label(
 		"يُفضَّل استخدام السماعات · headphones recommended", 12, UiKit.INK_FAINT
 	))
@@ -269,5 +282,6 @@ func _on_begin() -> void:
 	# browser no longer counts this as a user gesture.
 	AudioBus.unlock()
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	GameState.reset()
 	await Fade.fade_out(0.7)
 	get_tree().change_scene_to_file(GAME_SCENE)

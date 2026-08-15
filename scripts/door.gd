@@ -34,7 +34,7 @@ var locked := false
 ## optionally with a subtitle line (the closet: the kid will not open it).
 var script_locked := false
 var blocked_line := ""
-var open_deg := 105.0
+var open_deg := 90.0
 ## +1 / -1: which way around world Y the panel swings open.
 var swing := -1.0
 
@@ -50,10 +50,16 @@ var _spill_color := SPILL_COLOR
 var _spill_enabled := false
 
 var _closed_aabb := AABB()
+## World axis the closed panel is thin along, and hinge -> panel centre.
+var _normal := Vector3(0, 0, 1)
+var _hinge_to_center := Vector3(1, 0, 0)
 var _open := false
 var _animating := false
 ## Resting angle in degrees when "closed" - nonzero while standing ajar.
 var _base_deg := 0.0
+## Direction the current/last open used (+1/-1). Player opens pick this per
+## press so the panel swings away from them; the director uses `swing`.
+var _open_dir := -1.0
 var _tween: Tween
 
 
@@ -70,10 +76,18 @@ func setup(panel: MeshInstance3D) -> void:
 	panel.reparent(_hinge, true)
 
 	_closed_aabb = _world_aabb(panel)
+	_normal = Vector3(0, 0, 1) if _closed_aabb.size.z < _closed_aabb.size.x else Vector3(1, 0, 0)
+	_hinge_to_center = _closed_aabb.get_center() - global_position
+	_hinge_to_center.y = 0.0
 
 	_body = AnimatableBody3D.new()
 	_body.name = "Body"
-	_body.sync_to_physics = true
+	# sync_to_physics only forwards the body's OWN local transform changes to the
+	# physics server. This body never moves locally, its parent (the hinge) does,
+	# so with sync on the collider stays at the closed pose forever and no door
+	# can be walked through. Off, CollisionObject3D pushes the global transform
+	# whenever the hinge rotates, which is what a scripted door needs.
+	_body.sync_to_physics = false
 	_body.collision_layer = 1
 	_body.collision_mask = 0
 	var body_shape := CollisionShape3D.new()
@@ -157,20 +171,36 @@ func is_open() -> bool:
 	return _open
 
 
-func open(duration := OPEN_DUR) -> void:
+## `dir` +1/-1 overrides the configured swing for this open (player opens pass
+## the side they are on so the panel never sweeps through them). 0 = `swing`.
+func open(duration := OPEN_DUR, dir := 0.0) -> void:
 	if _open or _animating:
 		return
 	_animating = true
+	_open_dir = swing if dir == 0.0 else signf(dir)
 	AudioBus.sfx_at("door_open", global_position, -4.0)
 	_update_spill()
 	_tween = create_tween().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN_OUT)
-	_tween.tween_property(_hinge, "rotation:y", deg_to_rad(open_deg * swing), duration)
+	_tween.tween_property(_hinge, "rotation:y", deg_to_rad(open_deg * _open_dir), duration)
 	await _tween.finished
 	_animating = false
 	_open = true
 	_base_deg = 0.0
 	_update_spill()
 	opened.emit()
+
+
+## Rotation sign that swings the panel away from `pos`. Which sign moves the
+## panel toward +normal depends on where the hinge sits, so it is derived from
+## the geometry rather than assumed.
+func swing_away_from(pos: Vector3) -> float:
+	var side := signf((pos - global_position).dot(_normal))
+	if side == 0.0:
+		side = 1.0
+	var plus_moves_to := signf(_hinge_to_center.rotated(Vector3.UP, 0.2).dot(_normal))
+	if plus_moves_to == 0.0:
+		plus_moves_to = 1.0
+	return -side * plus_moves_to
 
 
 func close(duration := CLOSE_DUR) -> void:
@@ -205,6 +235,15 @@ func set_ajar_instant(deg: float) -> void:
 	_hinge.rotation.y = deg_to_rad(deg * swing)
 
 
+## Instant fully open, for initial placement. `dir` +1/-1, 0 = `swing`.
+func set_open_instant(dir := 0.0) -> void:
+	_open_dir = swing if dir == 0.0 else signf(dir)
+	_hinge.rotation.y = deg_to_rad(open_deg * _open_dir)
+	_open = true
+	_base_deg = 0.0
+	_update_spill()
+
+
 ## Small shudder without unlatching. Silent on purpose, the caller plays
 ## whatever sound fits the moment.
 func shake(intensity := 1.0) -> void:
@@ -234,8 +273,9 @@ func jiggle(intensity := 1.0) -> void:
 
 
 ## What the player's interact press does. The awaitable open()/close() are for
-## the director; from the player they are fire-and-forget.
-func player_interact() -> void:
+## the director; from the player they are fire-and-forget. Opens swing away
+## from the side the player is standing on.
+func player_interact(by: Node3D = null) -> void:
 	if _animating:
 		return
 	if locked:
@@ -248,6 +288,8 @@ func player_interact() -> void:
 		return
 	if _open:
 		close()
+	elif by:
+		open(OPEN_DUR, swing_away_from(by.global_position))
 	else:
 		open()
 
@@ -297,5 +339,5 @@ class DoorInteract:
 	func _can_interact() -> bool:
 		return not door._animating
 
-	func _on_interact(_by: Node3D) -> void:
-		door.player_interact()
+	func _on_interact(by: Node3D) -> void:
+		door.player_interact(by)

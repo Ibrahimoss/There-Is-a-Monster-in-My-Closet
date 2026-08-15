@@ -53,6 +53,9 @@ func _load_font() -> void:
 func _build_ui() -> void:
 	_root = MarginContainer.new()
 	_root.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	# set_anchors_preset does not touch grow direction. Anchored to the bottom
+	# edge with the default (grow down) the whole box sits below the screen.
+	_root.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	_root.add_theme_constant_override("margin_bottom", 72)
 	_root.add_theme_constant_override("margin_left", 48)
 	_root.add_theme_constant_override("margin_right", 48)
