@@ -490,7 +490,7 @@ func _build_title_block() -> void:
 	var margin := MarginContainer.new()
 	margin.set_anchors_preset(Control.PRESET_TOP_LEFT)
 	margin.add_theme_constant_override("margin_left", 84)
-	margin.add_theme_constant_override("margin_top", 64)
+	margin.add_theme_constant_override("margin_top", 52)
 	margin.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_text.add_child(margin)
 
@@ -499,20 +499,32 @@ func _build_title_block() -> void:
 	margin.add_child(_title_flick)
 
 	var box := VBoxContainer.new()
-	# font has a lot of vertical air, pull the lines together
-	box.add_theme_constant_override("separation", -16)
+	box.add_theme_constant_override("separation", 0)
 	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_title_flick.add_child(box)
 
-	var l1 := _doom_label("THERE IS A", 26, CAPTION_DIM, 6)
-	box.add_child(l1)
-	var l2 := _doom_label("MONSTER", 92, CAPTION, 14)
-	box.add_child(l2)
-	var l3 := _doom_label("IN MY CLOSET", 38, CAPTION, 10)
-	box.add_child(l3)
+	# The three English lines close right up: the display face carries a lot of
+	# vertical air and they are meant to read as one stacked block. That pull
+	# belongs to them alone -- applied across the whole title it also dragged
+	# the Arabic line underneath into the last of them, because a VBox spaces
+	# every child the same. Held tighter than it once was so the title ends
+	# higher: the exchange below is anchored to the bottom and grows upward,
+	# and the Arabic replies stand taller than the English ones did, so dad's
+	# line needs the room.
+	var stack := VBoxContainer.new()
+	stack.add_theme_constant_override("separation", -24)
+	stack.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.add_child(stack)
+
+	var l1 := _doom_label("THERE IS A", 22, CAPTION_DIM, 5)
+	stack.add_child(l1)
+	var l2 := _doom_label("MONSTER", 74, CAPTION, 12)
+	stack.add_child(l2)
+	var l3 := _doom_label("IN MY CLOSET", 31, CAPTION, 8)
+	stack.add_child(l3)
 
 	var ar_pad := Control.new()
-	ar_pad.custom_minimum_size = Vector2(0, 20)
+	ar_pad.custom_minimum_size = Vector2(0, 4)
 	box.add_child(ar_pad)
 
 	# arabic title, naskh font
@@ -524,7 +536,7 @@ func _build_title_block() -> void:
 	box.add_child(ar)
 
 	var rule_pad := Control.new()
-	rule_pad.custom_minimum_size = Vector2(0, 22)
+	rule_pad.custom_minimum_size = Vector2(0, 14)
 	box.add_child(rule_pad)
 
 	var rule := ColorRect.new()
@@ -542,7 +554,11 @@ func _build_exchange() -> void:
 	margin.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
 	margin.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	margin.add_theme_constant_override("margin_left", 84)
-	margin.add_theme_constant_override("margin_bottom", 78)
+	# Sat at 78 when the replies were short English lines. Arabic stands taller
+	# and this block grows upward, so it was climbing into the title; bringing
+	# it nearer the bottom edge gives dad's line clear air under the title
+	# without shrinking the replies themselves.
+	margin.add_theme_constant_override("margin_bottom", 40)
 	_text.add_child(margin)
 
 	var box := VBoxContainer.new()
@@ -554,7 +570,9 @@ func _build_exchange() -> void:
 	box.add_child(_dad)
 
 	var pad := Control.new()
-	pad.custom_minimum_size = Vector2(0, 8)
+	# The block grows upward off the bottom margin, so anything taken out of it
+	# here drops dad's line further from the title above.
+	pad.custom_minimum_size = Vector2(0, 6)
 	box.add_child(pad)
 
 	# replies and the picked reply share a fixed-height slot so the dad line
@@ -563,7 +581,7 @@ func _build_exchange() -> void:
 	slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_child(slot)
 	var replies := VBoxContainer.new()
-	replies.add_theme_constant_override("separation", 4)
+	replies.add_theme_constant_override("separation", 2)
 	slot.add_child(replies)
 	for r in REPLIES:
 		if r["id"] == "quit" and OS.has_feature("web"):
@@ -656,6 +674,15 @@ func _say_dad(text: String) -> void:
 
 
 func _type_out(label: Label, text: String, token: int) -> void:
+	# These labels are built empty and filled later, so the face was picked
+	# from "" -- which is not Arabic, so they all came out in the display font
+	# and, worse, laid out at its line height. That is what walked dad's line
+	# up into the title. Re-pick it from the line actually being said.
+	label.add_theme_font_override("font", _text_font(text))
+	if _is_ar(text):
+		label.add_theme_constant_override("outline_size", 2)
+		label.add_theme_constant_override("shadow_offset_x", 1)
+		label.add_theme_constant_override("shadow_offset_y", 1)
 	label.text = text
 	label.visible_characters = 0
 	var count := label.get_total_character_count()
@@ -697,25 +724,32 @@ func _hide_kid() -> void:
 	_kid.visible = false
 
 
-## Arabic wants the naskh face itself, not naskh glyphs borrowed through the
-## display font's fallback: the doom metrics are built for blocky capitals, so
-## a heavy outline and a hard 3px shadow bury the joins of a connected script.
-## Right-aligned too, because the menu reads from the right in Arabic.
-static func _is_ar() -> bool:
-	return GameState.language == "ar"
+## Which face a line wants is a property of the line, not of the language
+## setting: the title is English whatever the menu is set to, and switching it
+## to naskh with everything else is what turned it into a serif. Arabic wants
+## the naskh face itself rather than naskh glyphs borrowed through the display
+## font's fallback -- the doom metrics are built for blocky capitals, so a
+## heavy outline and a hard 3px shadow bury the joins of a connected script.
+static func _is_ar(text: String) -> bool:
+	for i in text.length():
+		var c := text.unicode_at(i)
+		# Arabic, plus the supplement and extended-A blocks
+		if c >= 0x0600 and c <= 0x08FF:
+			return true
+	return false
 
 
-static func _text_font() -> Font:
-	return UiKit.font() if _is_ar() else DOOM_FONT
+static func _text_font(text: String) -> Font:
+	return UiKit.font() if _is_ar(text) else DOOM_FONT
 
 
 static func _doom_label(text: String, size: int, color: Color, outline: int) -> Label:
 	var l := Label.new()
 	l.text = text
-	var ar := _is_ar()
-	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT if ar else HORIZONTAL_ALIGNMENT_LEFT
+	var ar := _is_ar(text)
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	l.add_theme_font_override("font", _text_font())
+	l.add_theme_font_override("font", _text_font(text))
 	l.add_theme_font_size_override("font_size", size)
 	l.add_theme_color_override("font_color", color)
 	l.add_theme_color_override("font_outline_color", OUTLINE)
@@ -732,9 +766,9 @@ func _menu_item(text: String, size: int) -> Button:
 	b.text = text
 	b.flat = true
 	b.focus_mode = Control.FOCUS_NONE
-	var ar := _is_ar()
-	b.alignment = HORIZONTAL_ALIGNMENT_RIGHT if ar else HORIZONTAL_ALIGNMENT_LEFT
-	b.add_theme_font_override("font", _text_font())
+	var ar := _is_ar(text)
+	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	b.add_theme_font_override("font", _text_font(text))
 	b.add_theme_font_size_override("font_size", size)
 	b.add_theme_color_override("font_color", CAPTION)
 	b.add_theme_color_override("font_hover_color", UiKit.WARM)
@@ -1007,7 +1041,10 @@ func _add_toggle(label_text: String, key: String, values: Array, words: Array[St
 	row.add_child(b)
 	var paint := func() -> void:
 		var i := values.find(GameState.settings[key])
-		b.text = words[maxi(i, 0)]
+		var word: String = words[maxi(i, 0)]
+		b.text = word
+		# built with an empty label, so the face was chosen before the word was
+		b.add_theme_font_override("font", _text_font(word))
 	b.pressed.connect(func() -> void:
 		var i := values.find(GameState.settings[key])
 		GameState.set_setting(key, values[(i + 1) % values.size()])

@@ -18,6 +18,9 @@ uniform vec3 axis_origin = vec3(0.0);
 uniform vec3 axis_dir = vec3(0.0, 0.0, 1.0);
 // the wind starts here, so the room you stand in is not already spiralling
 uniform float start = 2.0;
+// and stops here. Without a cap a long wall slab keeps turning along its own
+// length until it sweeps out a cone, which is what it looks like: a cone.
+uniform float max_turn = 0.85;
 
 // Rodrigues: turn `v` about the unit `k` by `a`.
 vec3 spin(vec3 v, vec3 k, float a) {
@@ -31,7 +34,7 @@ void vertex() {
 	vec3 wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	vec3 d = wp - axis_origin;
 	float t = dot(d, k);
-	float a = twist * max(t - start, 0.0);
+	float a = clamp(twist * max(t - start, 0.0), -max_turn, max_turn);
 
 	vec3 radial = d - k * t;
 	vec3 turned = spin(radial, k, a);

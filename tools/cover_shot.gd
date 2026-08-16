@@ -13,6 +13,8 @@ extends Node
 const StartScreen := preload("res://scenes/ui/start_screen.gd")
 const NASKH := "res://assets/fonts/NotoNaskhArabic.ttf"
 const TWIST := preload("res://tools/cover_twist.gdshader")
+const DREAD := preload("res://scripts/dread.gdshader")
+const STUN := preload("res://scripts/stun.gdshader")
 
 ## 630x500 is what the jam page wants; rendered at twice that and left
 ## for them to downscale, so the type stays crisp.
@@ -76,9 +78,10 @@ func _run() -> void:
 	_open_the_door(rooms)
 	_lights_on(rooms)
 	_frame(rooms)
-	_place_monster(rooms)
 	await _wait(1.5)
 	_twist(rooms)
+	_place_monster(rooms)
+	_tension()
 	_title()
 	await _wait(0.5)
 	await _shot("cover")
@@ -158,15 +161,59 @@ func _place_monster(rooms: Array) -> void:
 	if m.has_method("freeze"):
 		m.call("freeze")
 	m.visible = true
-	# straight down the camera's sight line, on the corridor floor: far enough
-	# to read as a shape, near enough to loom, and it cannot end up behind a
-	# wall the way a room-relative offset kept doing.
+	# Close enough to loom over the frame, pushed off the centre line so it is
+	# not a mugshot and does not sit under the title. Down the camera's own
+	# sight line, which is the one line guaranteed to be in shot.
 	var fwd := -_cam.global_transform.basis.z.normalized()
-	var at := _cam.global_position + fwd * 8.5
+	var right := _cam.global_transform.basis.x.normalized()
+	var at := _cam.global_position + fwd * 4.2 + right * 0.26
 	at.y = root.global_position.y
 	m.global_position = at
-	m.look_at(Vector3(_cam.global_position.x, at.y, _cam.global_position.z), Vector3.UP)
-	m.scale = Vector3.ONE * 1.3
+	# Its view is a Y-billboard, so it already faces us and turning the node
+	# does nothing -- the lean uniform is the only way to tilt it. Height is
+	# HEIGHT (2.45) with the feet on the node origin, and the corridor ceiling
+	# is CEIL (2.85), so anything past about 1.16 puts its head through the
+	# ceiling. 1.05 leaves it 2.57 -- a good head over the kid, and inside.
+	m.scale = Vector3.ONE * 1.05
+	_light_it_from_behind(at, fwd)
+	_wake_its_face(m)
+
+
+## A lamp on the floor beyond it, so it comes forward as a silhouette instead
+## of a grey model standing in a corridor.
+func _light_it_from_behind(at: Vector3, fwd: Vector3) -> void:
+	var back := OmniLight3D.new()
+	back.light_color = Color(1.0, 0.86, 0.66)
+	back.light_energy = 3.4
+	back.omni_range = 5.5
+	back.shadow_enabled = false
+	_level.add_child(back)
+	back.global_position = at + fwd * 2.2 + Vector3(0.0, 0.75, 0.0)
+
+
+## The monster's own shader carries the eyes and the glitch; both idle low
+## until it is actually hunting you.
+func _wake_its_face(m: Node3D) -> void:
+	var view := m.get("_view") as MeshInstance3D
+	if view == null:
+		return
+	var mat := view.material_override as ShaderMaterial
+	if mat == null and view.mesh != null and view.mesh.get_surface_count() > 0:
+		mat = view.mesh.surface_get_material(0) as ShaderMaterial
+	if mat == null:
+		return
+	mat.set_shader_parameter("visible_amount", 1.0)
+	mat.set_shader_parameter("eyes", 1.0)
+	mat.set_shader_parameter("glitch", 0.5)
+	mat.set_shader_parameter("t", 3.1)
+	# In play the body sits at 0.02 -- near enough to black that all you get is
+	# the pair of eyes, which is right when it is hunting you and wrong on a
+	# cover, where the shape is the thing being sold. Lifted just off black so
+	# the head, the shoulders and the fall of it read against the lit wall
+	# behind, without turning it into a model you can inspect.
+	mat.set_shader_parameter("body_color", Color(0.105, 0.105, 0.135))
+	# a tilt: the billboard throws the node rotation away, so it goes here
+	mat.set_shader_parameter("lean", 0.22)
 
 
 ## Our own camera, at standing height, looking straight down the throat of it.
@@ -181,6 +228,8 @@ func _frame(rooms: Array) -> void:
 	var at: Vector3 = far.transform * Vector3(0.0, 1.25, 3.0)
 	_cam.global_position = eye
 	_cam.look_at(at, Vector3.UP)
+	# a dutch tilt -- the cheapest tension there is, and it costs nothing here
+	_cam.rotate_object_local(Vector3(0, 0, 1), deg_to_rad(5.0))
 
 
 ## The drill, in the world. Every mesh in the corridor gets a vertex shader
@@ -209,6 +258,12 @@ func _wind(mi: MeshInstance3D, origin: Vector3, dir: Vector3) -> void:
 		src = mi.get_surface_override_material(0)
 	if src == null and mi.mesh.get_surface_count() > 0:
 		src = mi.mesh.surface_get_material(0)
+	# Anything already on a shader is not corridor: the monster's body is a
+	# ShaderMaterial that carries its dissolve, its eyes and its glitch, and
+	# swapping that for a flat albedo pass is what turned it into a plain grey
+	# cone standing in the hall.
+	if src is ShaderMaterial:
+		return
 	var col := Color.WHITE
 	var tex: Texture2D = null
 	var std := src as StandardMaterial3D
@@ -225,8 +280,35 @@ func _wind(mi: MeshInstance3D, origin: Vector3, dir: Vector3) -> void:
 	mat.set_shader_parameter("twist", 0.045)
 	mat.set_shader_parameter("axis_origin", origin)
 	mat.set_shader_parameter("axis_dir", dir)
-	mat.set_shader_parameter("start", 4.5)
+	mat.set_shader_parameter("start", 5.0)
+	mat.set_shader_parameter("max_turn", 0.8)
 	mi.material_override = mat
+
+
+## The game's own two full-screen passes, held at a value rather than played:
+## dread swims and pulls the frame about, stun lags a second image behind the
+## first and smears everything out of the middle. Between them the cover gets
+## its blur and its unsteadiness without inventing a look the game does not
+## already have.
+func _tension() -> void:
+	var layer := CanvasLayer.new()
+	layer.layer = 108
+	add_child(layer)
+	_pass(layer, DREAD, {"amount": 0.55, "seen": 0.85, "t": 7.3})
+	_pass(layer, STUN, {"amount": 0.34, "t": 4.7})
+
+
+func _pass(layer: CanvasLayer, shader: Shader, params: Dictionary) -> void:
+	var mat := ShaderMaterial.new()
+	mat.shader = shader
+	for k: String in params.keys():
+		mat.set_shader_parameter(k, params[k])
+	var r := ColorRect.new()
+	r.set_anchors_preset(Control.PRESET_FULL_RECT)
+	r.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	r.material = mat
+	r.color = Color.WHITE
+	layer.add_child(r)
 
 
 ## The menu's own title block, top left, in the doom face.
