@@ -20,6 +20,8 @@ const SwitchPropScript := preload("res://scripts/switch_prop.gd")
 const SimpleInteractableScript := preload("res://scripts/simple_interactable.gd")
 const MeshUtilScript := preload("res://scripts/mesh_util.gd")
 const BedtimeScript := preload("res://scripts/bedtime.gd")
+const ChaseScript := preload("res://scripts/chase.gd")
+const DreamScript := preload("res://scripts/dream.gd")
 
 const DECORATE_DOORS := true
 const DECORATE_SWITCHES := true
@@ -28,6 +30,13 @@ const DECORATE_BATHROOM := true
 ## Act 0 objective chain (lights, drip, toothbrush, bed, closet). Off if the
 ## level scene brings its own sequencing for these beats.
 const DECORATE_BEDTIME := true
+## The dream rooms between act 0 and the chase. The pillow hall is the last of
+## them; anything that comes before it hands off to Dream.begin instead of
+## Bedtime doing it directly.
+const DECORATE_DREAM := true
+## Act 1, the chase: takes over from the dream's `finished`, or from Bedtime's
+## if the dream is switched off.
+const DECORATE_CHASE := true
 ## A faint cool ambient so unlit rooms are not pure black. Skipped
 ## if the level scene brings its own WorldEnvironment.
 const DECORATE_ENVIRONMENT := true
@@ -74,11 +83,84 @@ func on_player_ready(player: CharacterBody3D) -> void:
 		_build_lamp_switches()
 	if DECORATE_BATHROOM:
 		_build_bathroom()
-	if DECORATE_BEDTIME and _root.get_node_or_null("Bedtime") == null:
+	# CHASE=1 starts act 1 from the bedroom, CHASE=rooms from the first
+	# hallway. Desktop only, and it skips act 0 entirely.
+	var dev := "" if OS.has_feature("web") else OS.get_environment("CHASE")
+	# DREAM=1|top|dark|hall drops straight into the pillow hall the same way.
+	var dream_dev := "" if OS.has_feature("web") else OS.get_environment("DREAM")
+	var skip_act0 := not dev.is_empty() or not dream_dev.is_empty()
+	if DECORATE_BEDTIME and not skip_act0 and _root.get_node_or_null("Bedtime") == null:
 		var d: Node = BedtimeScript.new()
 		d.name = "Bedtime"
 		_root.add_child(d)
 		d.call("setup", _root, _house, _player)
+	var dream: Node = null
+	if DECORATE_DREAM and _root.get_node_or_null("Dream") == null:
+		dream = DreamScript.new()
+		dream.name = "Dream"
+		_root.add_child(dream)
+		dream.call("setup", _root, _house, _player)
+	if DECORATE_CHASE and _root.get_node_or_null("Chase") == null:
+		var c: Node = ChaseScript.new()
+		c.name = "Chase"
+		_root.add_child(c)
+		c.call("setup", _root, _house, _player)
+		# the running order. Ibrahim's dream rooms slot between Bedtime and the
+		# pillow hall later; this is the one place that has to change for it
+		var bedtime := _root.get_node_or_null("Bedtime")
+		var head: Node = dream if dream != null else c
+		if bedtime != null:
+			bedtime.connect("finished", Callable(head, "begin"))
+		if dream != null:
+			dream.connect("finished", Callable(c, "begin"))
+		if bedtime == null and skip_act0:
+			if not dream_dev.is_empty() and dream != null:
+				_start_dev(dream, dream_dev, true)
+			else:
+				_start_dev(c, dev, false)
+
+
+## Dev entry: act 0 never ran, so put the kid where it would have left them,
+## take the house lights down to the one behind the bathroom door, and start.
+## `dream` picks which director gets the mode string.
+func _start_dev(director: Node, mode: String, dream: bool) -> void:
+	# act 0's opening line has no business firing here
+	var opener := _root.get_node_or_null("start dialouge")
+	if opener != null:
+		opener.queue_free()
+	_player.teleport_to(BedtimeScript.START_POS)
+	_player.rotation.y = deg_to_rad(BedtimeScript.START_YAW)
+	_player.sync_look_from_transform()
+	var lamps := _lamps()
+	if lamps != null:
+		var by_mesh: Dictionary = lamps.get("lights_by_mesh")
+		for k: String in by_mesh.keys():
+			var l := by_mesh[k] as Light3D
+			if l == null:
+				continue
+			l.visible = k == "Focus_02_012"
+			if l.visible:
+				l.light_energy *= 2.2
+				if l is OmniLight3D:
+					(l as OmniLight3D).omni_range = 6.5
+		for c in _root.get_children():
+			if c is Light3D:
+				(c as Light3D).visible = false
+	var intro := _root.get_node_or_null("EyeOpenIntro")
+	if intro != null and intro.has_signal("finished"):
+		await intro.finished
+	else:
+		await get_tree().create_timer(1.0).timeout
+	_player.cinematic = false
+	if dream:
+		if mode == "1" or mode.is_empty():
+			director.call("begin")
+		else:
+			director.call("begin_at", mode)
+	elif mode == "rooms":
+		director.call("begin_at_rooms")
+	else:
+		director.call("begin")
 
 
 func get_doors() -> Array[MeshInstance3D]:

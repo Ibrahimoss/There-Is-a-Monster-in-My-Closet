@@ -65,6 +65,27 @@ const STREAMS := {
 	],
 	"switch": preload("res://assets/audio/doors/metalClick.ogg"),
 	"room_tone": preload("res://assets/audio/ambience/crickets_night.mp3"),
+	# real weather beats anything synthesised: field recordings out of the
+	# Sonniss GDC bundles, trimmed and cut down for the web build
+	"rain": preload("res://assets/audio/weather/rain_loop.ogg"),
+	"thunder": [
+		preload("res://assets/audio/weather/thunder_close.ogg"),
+		preload("res://assets/audio/weather/thunder_far.ogg"),
+	],
+}
+
+## Music is loaded on demand rather than preloaded: it is the one big file in
+## the project, and an autoload that preloads it cannot parse until the file
+## has been imported, which is a bootstrap knot on a fresh clone.
+const MUSIC := {
+	"chase": "res://assets/audio/music/run_for_your_life.mp3",
+}
+
+## Same reason as MUSIC, for anything that arrives after a clone: preloading a
+## file that has never been imported deadlocks this autoload. Loaded on the
+## first request and cached from then on.
+const LAZY := {
+	"monster_scream": "res://assets/audio/monster/monster_scream.ogg",
 }
 
 ## Baked procedural streams (scripts/sound_gen.gd), made on first use so the
@@ -75,8 +96,12 @@ var _unlocked := false
 var _sfx: Array[AudioStreamPlayer] = []
 var _ambience: AudioStreamPlayer
 var _ambience_tween: Tween
+var _music: AudioStreamPlayer
+var _music_tween: Tween
+var _music_cache := {}
 var _missing_warned := {}
 var _generated := {}
+var _lazy := {}
 var _world_lowpass: AudioEffectLowPassFilter
 var _muffle_tween: Tween
 
@@ -183,6 +208,9 @@ func _jittered(jitter: float) -> float:
 
 func _pick(sound: String) -> AudioStream:
 	if not STREAMS.has(sound):
+		var lazy := _lazy_stream(sound)
+		if lazy != null:
+			return lazy
 		var gen := _generated_stream(sound)
 		if gen != null:
 			return gen
@@ -195,6 +223,21 @@ func _pick(sound: String) -> AudioStream:
 		var variants := entry as Array
 		return variants[randi() % variants.size()] as AudioStream
 	return entry as AudioStream
+
+
+## File-backed streams that are loaded rather than preloaded.
+func _lazy_stream(sound: String) -> AudioStream:
+	if _lazy.has(sound):
+		return _lazy[sound] as AudioStream
+	if not LAZY.has(sound):
+		return null
+	var path := String(LAZY[sound])
+	if not ResourceLoader.exists(path):
+		return null
+	var s := load(path) as AudioStream
+	if s != null:
+		_lazy[sound] = s
+	return s
 
 
 ## Procedural streams by name, baked the first time they are asked for.
@@ -215,6 +258,26 @@ func _generated_stream(sound: String) -> AudioStream:
 			s = GeneratedSounds.drip()
 		"toothbrush":
 			s = GeneratedSounds.toothbrush()
+		"wind":
+			s = GeneratedSounds.wind()
+		"heartbeat":
+			s = GeneratedSounds.heartbeat()
+		"monster_glitch":
+			s = GeneratedSounds.monster_glitch()
+		"monster_breath":
+			s = GeneratedSounds.monster_breath()
+		"monster_step":
+			s = GeneratedSounds.monster_step()
+		"monster_roar":
+			s = GeneratedSounds.monster_roar()
+		"door_smash":
+			s = GeneratedSounds.door_smash()
+		"ring":
+			s = GeneratedSounds.ring()
+		"void_hum":
+			s = GeneratedSounds.void_hum()
+		"pillow_thud":
+			s = GeneratedSounds.pillow_thud()
 	if s != null:
 		_generated[sound] = s
 	return s
@@ -245,6 +308,46 @@ func loop_at(sound: String, parent: Node, pos: Vector3, volume_db := -14.0) -> A
 	if _unlocked and p.stream != null:
 		p.play()
 	return p
+
+
+## A looping music bed on its own player, so it is independent of ambience and
+## can be faded out on its own when the chase ends.
+func music(sound: String, fade := 1.5, volume_db := -14.0) -> void:
+	if not _unlocked or not MUSIC.has(sound):
+		return
+	var path: String = MUSIC[sound]
+	if not _music_cache.has(sound):
+		_music_cache[sound] = load(path) as AudioStream if ResourceLoader.exists(path) else null
+	var stream := _music_cache[sound] as AudioStream
+	if stream == null:
+		return
+	if stream is AudioStreamMP3:
+		(stream as AudioStreamMP3).loop = true
+	elif stream is AudioStreamOggVorbis:
+		(stream as AudioStreamOggVorbis).loop = true
+	if _music == null or not is_instance_valid(_music):
+		_music = AudioStreamPlayer.new()
+		_music.bus = "Ambience"
+		add_child(_music)
+	if _music.stream == stream and _music.playing:
+		return
+	_music.stream = stream
+	_music.volume_db = -60.0
+	_music.play()
+	_fade_music(volume_db, fade)
+
+
+func stop_music(fade := 1.5) -> void:
+	if _music == null or not is_instance_valid(_music):
+		return
+	_fade_music(-60.0, fade)
+
+
+func _fade_music(target_db: float, time: float) -> void:
+	if _music_tween and _music_tween.is_valid():
+		_music_tween.kill()
+	_music_tween = create_tween()
+	_music_tween.tween_property(_music, "volume_db", target_db, time)
 
 
 ## Named looping ambience. MP3 streams don't loop by default; force it.

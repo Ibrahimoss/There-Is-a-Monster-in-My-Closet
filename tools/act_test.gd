@@ -158,7 +158,16 @@ func _run() -> void:
 	var lamp := _light("Desk_lamp_003")
 	_check("kid's lamp out", lamp != null and not lamp.visible)
 	_check("closet door opened by itself", closet != null and bool(closet.get("is_open")))
-	_check("act is CLOSET", GameState.current_act == GameState.Act.CLOSET)
+	# the menu cut is gone: the dream rooms take over from `finished`, and hand
+	# on to the chase when the last of them is done
+	var chase := _level.get_node_or_null("Chase")
+	var dream := _level.get_node_or_null("Dream")
+	_check("chase director attached", chase != null)
+	_check("dream director attached", dream != null)
+	_check("dream picks up from the closet beat", dream != null and int(dream.get("stage")) >= 1,
+		"stage=%d" % (int(dream.get("stage")) if dream != null else -1))
+	_check("chase still waiting its turn", chase != null and int(chase.get("stage")) == 0)
+	_check("act is NIGHTMARE", GameState.current_act == GameState.Act.NIGHTMARE)
 	_done()
 
 

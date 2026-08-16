@@ -36,6 +36,9 @@ const OVERLAY_SHADER := preload("res://scripts/wake_up_overlay.gdshader")
 @export var sit_up_time := 2.4
 @export var auto_start := true
 @export var skippable := true
+## Off when something else already owns the player (a director mid-sequence);
+## the sequence still hands control back through end_cinematic when it ends.
+@export var auto_freeze := true
 
 @export_group("Feel")
 ## Tunnel vision while still on the pillow; eases back to the camera's own FOV.
@@ -83,7 +86,7 @@ func _ready() -> void:
 	_stand_fov = _cam.fov
 	_lie = _compute_lie_pose()
 
-	if _player.has_method("begin_cinematic"):
+	if auto_freeze and _player.has_method("begin_cinematic"):
 		_player.begin_cinematic()
 
 	_apply_pose(0.0)

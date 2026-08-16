@@ -63,6 +63,8 @@ const SWING_DAMPING := 2.2
 const RESTITUTION := 0.18
 const PUSH_BLEND := 0.35
 const OPENED_BY_PUSH_DEG := 10.0
+## Seconds for a full swing when shouldered open at a run.
+const BARGE_TIME := 0.28
 
 var is_open := false
 ## rad/s of world hinge angle while coasting after a shove
@@ -194,6 +196,31 @@ func push_from(point: Vector3, vel: Vector3) -> void:
 	var lever := clampf((point - _shut.origin).dot(panel_dir), 0.15, width)
 	_ang_vel = lerpf(_ang_vel, into / lever, PUSH_BLEND)
 	set_physics_process(true)
+
+
+## A running shoulder: the panel is thrown open away from `by`, fast, with a
+## bang. Locked doors take the hit and rattle. Returns whether it gave.
+func barge(by: Node3D) -> bool:
+	if _tween != null and _tween.is_valid() and _tween.is_running():
+		return false
+	var now := Time.get_ticks_msec()
+	if locked:
+		if now >= _next_rattle_ms:
+			_next_rattle_ms = now + 500
+			jiggle(1.4)
+			AudioBus.sfx_at("closet_thump", get_prompt_anchor(), volume_db + 2.0, 0.08, 0.9)
+			_play(locked_sound)
+			refused.emit()
+		return false
+	if is_open:
+		return false
+	_dir = swing_away_from(by.global_position)
+	var keep := swing_time
+	swing_time = minf(swing_time, BARGE_TIME)
+	set_open(true)
+	swing_time = keep
+	AudioBus.sfx_at("closet_thump", get_prompt_anchor(), volume_db + 3.0, 0.08, 1.15)
+	return true
 
 
 ## While a tween drives the panel through the player, shove them along

@@ -32,6 +32,21 @@ const RUN_SPEED := 3.1
 const CROUCH_SPEED := 0.85
 const GRAVITY := 18.0
 
+## Being chased: quicker on both legs and no stamina floor, because dying to
+## an empty bar in a corridor is not the scare anyone came for.
+const CHASE_WALK_SPEED := 2.4
+const CHASE_RUN_SPEED := 3.3
+const CHASE_CROUCH_SPEED := 1.6
+## Running into a shut door in the chase shoulders it open instead of stopping
+## dead. Below this approach speed it is just a walk into a wall.
+const BARGE_MIN_SPEED := 2.2
+
+## Capsule heights. Crouched, the collider shrinks with the eyes so a low gap
+## can actually be gone under, and you stay down until there is headroom.
+const CAPSULE_R := 0.24
+const CAPSULE_H_STAND := 1.25
+const CAPSULE_H_CROUCH := 0.78
+
 # --- Momentum ---------------------------------------------------------------
 ## Rates for the exponential approach of velocity to its target. Higher is
 ## snappier. Reversal has its own rate.
@@ -123,11 +138,36 @@ const BUMP_COOLDOWN := 0.35
 const CROUCH_OMEGA := 11.0
 const CROUCH_ZETA := 0.8
 
+## Shouldering a door open. Its own spring, slower and looser than the wall
+## bump, so the camera rides the hit and drifts back rather than snapping:
+## that drift is what makes it feel like the door gave way to you.
+## Underdamped on purpose: the view overshoots and rings back rather than
+## easing home. A kid at a dead run putting a shoulder through a door should
+## cost them their footing for a moment.
+const BARGE_OMEGA := 9.0
+const BARGE_ZETA := 0.38
+## Metres the view is thrown along the direction of the hit, and dropped.
+const BARGE_PUSH := 0.34
+const BARGE_DROP := 0.15
+## Degrees. Pitch dips whichever way you hit it; yaw and roll only answer to
+## the sideways part, so a shoulder-first hit leans and a head-on one does not.
+const BARGE_PITCH := 5.6
+const BARGE_YAW := 3.2
+const BARGE_ROLL := 5.0
+
 ## Hand-held camera noise. Tiny, steadier when aiming at something.
 const MICRO_AMP := deg_to_rad(0.16)
 const MICRO_FREQ := 0.45
 const MICRO_AIM_CUT := 0.6
 const MICRO_TIRED_MUL := 1.8
+
+## Fright. A hand tremble on the view, the walls closing in, and a heart that
+## goes from a resting knock to a hammer as the thing gets close.
+const DREAD_SHAKE := deg_to_rad(0.7)
+const DREAD_FOV := 5.0
+const DREAD_FOV_SEEN := 3.5
+const HEART_SLOW := 1.05
+const HEART_FAST := 2.6
 
 const FOV_BASE := 75.0
 const FOV_WALK := 0.8
@@ -163,7 +203,10 @@ var ray: RayCast3D
 ## the keyboard, and read the counters.
 var test_drive := false
 var test_input := Vector2.ZERO
+var test_run := false
+var test_crouch := false
 var debug_bump_count := 0
+var debug_barge_count := 0
 ## Ticks where the planar velocity turned more than 90 degrees while input
 ## held steady. Should stay 0 while gliding along a wall.
 var debug_dir_flips := 0
@@ -174,6 +217,9 @@ var _rig: Node3D
 var _camera: Camera3D
 var _ray: RayCast3D
 var _hands: HandRig
+var _capsule: CapsuleShape3D
+var _capsule_node: CollisionShape3D
+var _was_crouching := false
 ## Velocity handed to us by the world (a door swinging into us), decays.
 var _external_vel := Vector3.ZERO
 
@@ -190,12 +236,18 @@ var _pitch_vel := 0.0
 var _written_yaw := 0.0
 var _written_pitch := 0.0
 var _look_lock := false
+var _step_sound := "footstep_wood"
+var _step_db := 0.0
 var _capture_grace := 0
 var _first_motion := true
 var _aim_focus := 0.0
 var _noise := FastNoiseLite.new()
 
 # body
+var _chase := false
+var _dread := 0.0
+var _dread_seen := 0.0
+var _heart := 0.0
 var _crouching := false
 var _running := false
 var _stamina := STAMINA_MAX
@@ -227,6 +279,8 @@ var _prev_vy := 0.0
 var _head_lag := Spring3.new(HEAD_LAG_OMEGA, HEAD_LAG_ZETA)
 var _bump_pos := Spring3.new(BUMP_OMEGA, BUMP_ZETA)
 var _bump_rot := Spring3.new(BUMP_OMEGA, BUMP_ZETA)
+var _barge_pos := Spring3.new(BARGE_OMEGA, BARGE_ZETA)
+var _barge_rot := Spring3.new(BARGE_OMEGA, BARGE_ZETA)
 var _reach_pitch := Spring1.new(16.0, 0.7)
 var _crouch := Spring1.new(CROUCH_OMEGA, CROUCH_ZETA)
 
@@ -315,12 +369,14 @@ func _build_rig() -> void:
 		cs = CollisionShape3D.new()
 		add_child(cs)
 	var capsule := cs.shape as CapsuleShape3D
-	if capsule == null or not is_equal_approx(capsule.radius, 0.24) or cs.scale != Vector3.ONE:
+	if capsule == null or not is_equal_approx(capsule.radius, CAPSULE_R) or cs.scale != Vector3.ONE:
 		capsule = CapsuleShape3D.new()
-		capsule.radius = 0.24
-		capsule.height = 1.25
+		capsule.radius = CAPSULE_R
+		capsule.height = CAPSULE_H_STAND
 		cs.shape = capsule
-		cs.transform = Transform3D(Basis.IDENTITY, Vector3(0.0, 0.625, 0.0))
+		cs.transform = Transform3D(Basis.IDENTITY, Vector3(0.0, CAPSULE_H_STAND * 0.5, 0.0))
+	_capsule = capsule
+	_capsule_node = cs
 	collision_layer = 2
 	collision_mask = 1
 
@@ -417,22 +473,32 @@ func _physics_process(delta: float) -> void:
 	var input := Vector2.ZERO
 	if test_drive:
 		input = test_input
-		_crouching = false
+		_crouching = test_crouch
 	elif _moving():
 		_crouching = Input.is_action_pressed("crouch")
 		input = Input.get_vector("move_left", "move_right", "move_forward", "move_back")
 	else:
 		_crouching = false
+	# no standing up into whatever you just crawled under
+	if not _crouching and _crouch.value > 0.05 and not _headroom():
+		_crouching = true
+	if _crouching != _was_crouching:
+		_was_crouching = _crouching
+		AudioBus.sfx("cloth", -16.0, 0.08)
 	_last_input = input
 
 	_crouch.target = 1.0 if _crouching else 0.0
 	_crouch.step(delta)
 	var cb := clampf(_crouch.value, 0.0, 1.0)
+	_fit_capsule(cb)
 
 	_update_stamina(input, delta)
 	_run_blend = move_toward(_run_blend, 1.0 if _running else 0.0, 4.0 * delta)
 	var run_t := smoothstep(0.0, 1.0, _run_blend)
-	_speed_cap = lerpf(lerpf(WALK_SPEED, RUN_SPEED, run_t), CROUCH_SPEED, cb)
+	var walk_cap := CHASE_WALK_SPEED if _chase else WALK_SPEED
+	var run_cap := CHASE_RUN_SPEED if _chase else RUN_SPEED
+	var crouch_cap := CHASE_CROUCH_SPEED if _chase else CROUCH_SPEED
+	_speed_cap = lerpf(lerpf(walk_cap, run_cap, run_t), crouch_cap, cb)
 
 	var wish := (transform.basis * Vector3(input.x, 0.0, input.y)).normalized() \
 		if input != Vector2.ZERO else Vector3.ZERO
@@ -495,7 +561,7 @@ func _physics_process(delta: float) -> void:
 			var s := clampf(_stop_speed / RUN_SPEED, 0.0, 1.0)
 			_land_offset -= STOP_DIP * s
 			if s > 0.6:
-				AudioBus.sfx_at("footstep_wood", global_position, -18.0, 0.1, 0.9)
+				AudioBus.sfx_at(_step_sound, global_position, -18.0 + _step_db, 0.1, 0.9)
 			_stop_timer = 0.0
 
 	# landing
@@ -515,21 +581,55 @@ func _physics_process(delta: float) -> void:
 	_update_target()
 
 
+## The capsule follows the crouch: shorter and lower, feet staying put.
+func _fit_capsule(cb: float) -> void:
+	if _capsule == null:
+		return
+	var h := lerpf(CAPSULE_H_STAND, CAPSULE_H_CROUCH, cb)
+	if absf(_capsule.height - h) < 0.002:
+		return
+	_capsule.height = h
+	_capsule_node.position.y = h * 0.5
+
+
+## Room to stand up here: a standing capsule at our feet meets nothing solid.
+func _headroom() -> bool:
+	var probe := CapsuleShape3D.new()
+	probe.radius = CAPSULE_R - 0.02
+	probe.height = CAPSULE_H_STAND
+	var q := PhysicsShapeQueryParameters3D.new()
+	q.shape = probe
+	q.transform = Transform3D(Basis.IDENTITY, global_position + Vector3(0.0, CAPSULE_H_STAND * 0.5 + 0.02, 0.0))
+	q.collision_mask = 1
+	q.exclude = [get_rid()]
+	return get_world_3d().direct_space_state.intersect_shape(q, 1).is_empty()
+
+
 ## Wall contact on the rising edge only, gated on approach speed and a
 ## cooldown, so leaning on a wall does not machine-gun bumps.
 func _scan_collisions() -> void:
 	var wall_now := false
 	var bumped := false
+	var planar_pre := Vector3(_pre_v.x, 0.0, _pre_v.z)
 	for i in get_slide_collision_count():
 		var c := get_slide_collision(i)
 		var n := c.get_normal()
 		if absf(n.y) > 0.5:
 			continue
 		var col := c.get_collider()
-		# door bodies get shoved with the speed we hit them at
+		# door bodies get shoved with the speed we hit them at; in the chase a
+		# running shoulder throws them open instead
 		if col != null and col.has_meta("door"):
 			var door: Object = col.get_meta("door")
 			if door != null and door.has_method("push_from"):
+				var into := -planar_pre.dot(n)
+				if _chase and _running and into > BARGE_MIN_SPEED and door.has_method("barge") \
+						and bool(door.call("barge", self)):
+					debug_barge_count += 1
+					_barge_kick(n, into)
+					velocity.x = _pre_v.x * 0.8
+					velocity.z = _pre_v.z * 0.8
+					continue
 				door.call("push_from", c.get_position(), _pre_v)
 		if bumped:
 			continue
@@ -539,6 +639,32 @@ func _scan_collisions() -> void:
 			_fire_bump(n, approach, c.get_position())
 		bumped = true
 	_wall_contact = wall_now
+
+
+## Went through a door shoulder-first. Everything here is in body space, so
+## the throw follows where the door actually was rather than where you were
+## looking: hit it head on and the view drives forward and dips; catch it with
+## a shoulder and it swings that way and leans; back into it and it just drops.
+## `n` is the contact normal (out of the door, toward us), `approach` the speed
+## going in.
+func _barge_kick(n: Vector3, approach: float) -> void:
+	var ln := n.rotated(Vector3.UP, -rotation.y)
+	var into := Vector3(-ln.x, 0.0, -ln.z)
+	if into.length() < 0.01:
+		return
+	into = into.normalized()
+	var force := clampf(approach / CHASE_RUN_SPEED, 0.45, 1.15)
+	# how much of the hit was sideways: 0 straight ahead or straight behind
+	var side := into.x
+	var head_on := absf(into.z)
+
+	_barge_pos.kick((into * BARGE_PUSH + Vector3(0.0, -BARGE_DROP, 0.0)) * force * BARGE_OMEGA)
+	_barge_rot.kick(Vector3(
+		-deg_to_rad(BARGE_PITCH) * (0.55 + 0.45 * head_on),
+		-deg_to_rad(BARGE_YAW) * side,
+		-deg_to_rad(BARGE_ROLL) * side) * force * BARGE_OMEGA)
+	_hands.kick(into * 0.3 * force)
+	_fov_kick = -1.6 * force
 
 
 func _fire_bump(n: Vector3, approach: float, pos: Vector3) -> void:
@@ -566,6 +692,19 @@ func shake(intensity := 1.0) -> void:
 	_hands.kick(dir * 0.08 * intensity)
 
 
+## Heartbeat, quickening as the thing closes. Two knocks per beat, and the
+## whole body flinches with the first one.
+func _drive_heart(dt: float, scared: float) -> void:
+	var rate := lerpf(HEART_SLOW, HEART_FAST, scared)
+	_heart += dt * rate
+	if _heart < 1.0:
+		return
+	_heart -= 1.0
+	var vol := lerpf(-26.0, -13.0, scared)
+	AudioBus.sfx("heartbeat", vol, 0.05)
+	_bump_pos.kick(Vector3(0.0, -0.012 * scared, 0.0))
+
+
 ## Small kick straight back, for switch flicks and drawer thunks nearby.
 func recoil(z: float) -> void:
 	_bump_pos.kick(Vector3(0.0, 0.0, z))
@@ -580,6 +719,15 @@ func nudge(rot: Vector3, pos := Vector3.ZERO) -> void:
 
 
 func _update_stamina(input: Vector2, delta: float) -> void:
+	# Chased: the pool is off entirely, so Shift always answers.
+	if _chase:
+		_exhausted = false
+		_stamina = STAMINA_MAX
+		var held := test_run if test_drive else Input.is_action_pressed("run")
+		_running = held and _moving() and input != Vector2.ZERO and not _crouching
+		HUD.set_stamina(1.0, false)
+		return
+
 	if _exhausted and _stamina >= STAMINA_RECOVER_AT:
 		_exhausted = false
 
@@ -621,6 +769,8 @@ func _process(delta: float) -> void:
 	_head_lag.step(dt)
 	_bump_pos.step(dt)
 	_bump_rot.step(dt)
+	_barge_pos.step(dt)
+	_barge_rot.step(dt)
 	_reach_pitch.step(dt)
 	_hands.drive(_bob_phase, _bob_blend, _yaw_vel, _pitch_vel, dt)
 	if in_bed:
@@ -706,10 +856,17 @@ func _update_feel(dt: float) -> void:
 
 	# Breathing: fades out while walking, deepens and quickens as stamina
 	# empties.
+	# Fright rides on top of exhaustion: the breath goes fast and shallow, and
+	# it does not fade out while running the way the tired breath does.
 	var tired := 1.0 - _stamina / STAMINA_MAX
-	var breath_freq := BREATH_FREQ * (1.0 + 0.7 * tired)
-	var breath_amp := BREATH_AMP * (1.0 + 2.2 * tired)
-	var breath := sin(_time * TAU * breath_freq * 0.5) * breath_amp * (1.0 - _bob_blend)
+	var scared := smoothstep(0.05, 1.0, _dread)
+	var breath_freq := BREATH_FREQ * (1.0 + 0.7 * tired + 1.5 * scared)
+	var breath_amp := BREATH_AMP * (1.0 + 2.2 * tired + 5.0 * scared)
+	if _chase:
+		breath_freq *= 1.5
+		breath_amp *= 1.6
+	var breath := sin(_time * TAU * breath_freq * 0.5) * breath_amp \
+		* (1.0 - _bob_blend * (1.0 - scared))
 
 	# Lean.
 	var lean_axis := 0.0
@@ -732,18 +889,35 @@ func _update_feel(dt: float) -> void:
 		_noise.get_noise_2d(t, 0.0),
 		_noise.get_noise_2d(t, 37.0),
 		_noise.get_noise_2d(t, 91.0) * 0.6) * mm
+	# a fast tremble on top, from the hands rather than the head, so it reads
+	# as the kid shaking and not as the camera drifting
+	if scared > 0.001:
+		var ft := _time * 9.0
+		var jitter := DREAD_SHAKE * scared * (1.0 + _dread_seen)
+		micro += Vector3(
+			_noise.get_noise_2d(ft, 300.0),
+			_noise.get_noise_2d(ft, 411.0),
+			_noise.get_noise_2d(ft, 527.0)) * jitter
+		_drive_heart(dt, scared)
 
 	# Apply.
 	_eye_base = STAND_EYE + (CROUCH_EYE - STAND_EYE) * _crouch.value
 	if not _look_lock:
 		_head.position = Vector3(_lean * LEAN_OFFSET, _eye_base, 0.0)
-	_rig.position = Vector3(bob_x, bob_y + breath + _land_offset, 0.0) + _head_lag.value + _bump_pos.value
+	_rig.position = Vector3(bob_x, bob_y + breath + _land_offset, 0.0) \
+		+ _head_lag.value + _bump_pos.value + _barge_pos.value
 	_rig.rotation = Vector3(
-		lag_p * LOOK_LAG_MIX + micro.x + _reach_pitch.value + _bump_rot.value.x,
-		lag_y * LOOK_LAG_MIX + micro.y,
-		bob_roll - _lean * LEAN_ROLL + _strafe_roll - lag_y * TURN_ROLL_MIX + micro.z + _bump_rot.value.z)
+		lag_p * LOOK_LAG_MIX + micro.x + _reach_pitch.value + _bump_rot.value.x + _barge_rot.value.x,
+		lag_y * LOOK_LAG_MIX + micro.y + _barge_rot.value.y,
+		bob_roll - _lean * LEAN_ROLL + _strafe_roll - lag_y * TURN_ROLL_MIX + micro.z
+			+ _bump_rot.value.z + _barge_rot.value.z)
 	_fov_kick = lerpf(_fov_kick, 0.0, 6.0 * dt)
-	var fov_target := FOV_BASE + FOV_WALK * ratio * _bob_blend + FOV_RUN * _run_blend + _fov_kick
+	var fov_run := FOV_RUN + (1.5 if _chase else 0.0)
+	# the walls come in as it gets close: tunnel vision, and it lurches when
+	# you actually look at the thing
+	var fov_fear := -DREAD_FOV * scared - DREAD_FOV_SEEN * _dread_seen
+	var fov_target := FOV_BASE + FOV_WALK * ratio * _bob_blend + fov_run * _run_blend \
+		+ _fov_kick + fov_fear
 	_camera.fov = lerpf(_camera.fov, fov_target, 4.0 * dt)
 
 
@@ -881,8 +1055,11 @@ func set_covers_locked(value: bool) -> void:
 
 
 ## Lie down: physics off, camera tweens to pillow height, body turns to face
-## the room. `spot` is where the body origin rests on the mattress.
-func enter_bed(spot: Vector3, yaw_deg: float) -> void:
+## the room. `spot` is where the body origin rests on the mattress. `secs` 0
+## poses it instantly — the ending cuts to black somewhere else entirely and
+## fades up here, and a tween there is the player watching themselves slide
+## across the house.
+func enter_bed(spot: Vector3, yaw_deg: float, secs := 1.4) -> void:
 	if in_bed:
 		return
 	in_bed = true
@@ -892,19 +1069,28 @@ func enter_bed(spot: Vector3, yaw_deg: float) -> void:
 	_look_lock = true
 	AudioBus.sfx("cloth", -6.0)
 	var target_yaw := rotation.y + wrapf(deg_to_rad(yaw_deg) - rotation.y, -PI, PI)
-	var t := create_tween().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
-	t.tween_property(self, "global_position", spot, 1.4)
-	t.parallel().tween_property(self, "rotation:y", target_yaw, 1.4)
-	t.parallel().tween_property(_head, "position:y", BED_EYE, 1.4)
-	t.parallel().tween_property(_head, "position:x", 0.0, 1.4)
-	t.parallel().tween_property(_head, "rotation:x", deg_to_rad(18.0), 1.4)
-	t.parallel().tween_property(_rig, "rotation", Vector3.ZERO, 1.4)
-	t.parallel().tween_property(_rig, "position", Vector3.ZERO, 1.4)
-	await t.finished
+	if secs > 0.0:
+		var t := create_tween().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+		t.tween_property(self, "global_position", spot, secs)
+		t.parallel().tween_property(self, "rotation:y", target_yaw, secs)
+		t.parallel().tween_property(_head, "position:y", BED_EYE, secs)
+		t.parallel().tween_property(_head, "position:x", 0.0, secs)
+		t.parallel().tween_property(_head, "rotation:x", deg_to_rad(18.0), secs)
+		t.parallel().tween_property(_rig, "rotation", Vector3.ZERO, secs)
+		t.parallel().tween_property(_rig, "position", Vector3.ZERO, secs)
+		await t.finished
+	else:
+		global_position = spot
+		rotation.y = target_yaw
+		_head.position = Vector3(0.0, BED_EYE, 0.0)
+		_head.rotation = Vector3(deg_to_rad(18.0), 0.0, 0.0)
+		_rig.transform = Transform3D.IDENTITY
 	_eye_base = BED_EYE
 	_head_lag.reset()
 	_bump_pos.reset()
 	_bump_rot.reset()
+	_barge_pos.reset()
+	_barge_rot.reset()
 	_look_lock = false
 	sync_look_from_transform()
 	entered_bed.emit()
@@ -934,7 +1120,33 @@ func _update_bed_feel() -> void:
 func _play_footstep(ratio: float) -> void:
 	var vol := -14.0 if _crouching else -8.0
 	vol += 6.0 * _run_blend + 4.0 * ratio - 4.0
-	AudioBus.sfx_at("footstep_wood", global_position, vol, 0.1)
+	if _chase:
+		vol += 2.0
+	AudioBus.sfx_at(_step_sound, global_position, vol + _step_db, 0.1)
+
+
+## What the floor sounds like. Boards by default; the dream rooms are not made
+## of boards. Pass an empty key to go back to the default.
+func set_step_sound(key: String, db_offset := 0.0) -> void:
+	_step_sound = "footstep_wood" if key.is_empty() else key
+	_step_db = db_offset
+
+
+## Pin the head where it is so a cutscene can pose it. While this is on,
+## `_update_look` leaves rotation.y, the head pitch and the eye height alone;
+## whatever you write stays written. Turning it off resyncs, so the mouse picks
+## up from wherever the camera ended.
+func look_lock(on: bool) -> void:
+	_look_lock = on
+	if not on:
+		# A cutscene may have posed the head off the rig's one axis - the dream's
+		# fall rolls and yaws it the whole way down. Mouse look only ever writes
+		# pitch, so anything left in the other two stays written for the rest of
+		# the game, which reads as a camera stuck at a tilt. Normalise on the way
+		# out and take the pitch as where the scene left off.
+		if _head != null:
+			_head.rotation = Vector3(_head.rotation.x, 0.0, 0.0)
+		sync_look_from_transform()
 
 
 func capture_mouse() -> void:
@@ -947,9 +1159,41 @@ func release_mouse() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
 
+## How frightened the kid is, 0..1, and how much of that is from having the
+## thing actually in view. The director feeds this every frame; it drives the
+## shakes, the FOV and the heartbeat.
+func set_dread(amount: float, seen := 0.0) -> void:
+	_dread = clampf(amount, 0.0, 1.0)
+	_dread_seen = clampf(seen, 0.0, 1.0)
+
+
+## Chase mode: faster on both legs, no stamina, harder breathing. The director
+## turns it on when the closet opens and off in the bathroom at the end.
+func set_chase(on: bool) -> void:
+	_chase = on
+	if on:
+		_stamina = STAMINA_MAX
+		_exhausted = false
+		HUD.set_stamina(1.0, false)
+
+
+func is_chased() -> bool:
+	return _chase
+
+
+## The seam warp: the whole body slides by a constant offset into the copy of
+## the corridor it is already standing in. Momentum, springs and look all
+## carry over untouched, which is the point - the player must not feel it.
+func shift_by(offset: Vector3) -> void:
+	global_position += offset
+
+
 ## Used by scripted respawns and tools. Teleports without carrying momentum
 ## and adopts the pose as the look state.
 func teleport_to(pos: Vector3) -> void:
 	global_position = pos
 	velocity = Vector3.ZERO
+	# a respawn should not arrive still leaning from the door you just hit
+	_barge_pos.reset()
+	_barge_rot.reset()
 	sync_look_from_transform()

@@ -23,9 +23,9 @@ const MeshUtilScript := preload("res://scripts/mesh_util.gd")
 
 enum State { TEETH, BED, LYING, DONE }
 
-## After the closet beat: fade out and back to the start screen. Off if a
-## later act picks up from `finished` / GameState.Act.CLOSET.
-const CUT_TO_MENU := true
+## After the closet beat: fade out and back to the start screen. Off now that
+## the chase picks up from `finished` / GameState.Act.CLOSET.
+const CUT_TO_MENU := false
 
 ## The kid's room: on the floor by the bed, facing the door.
 const START_POS := Vector3(5.5, 3.74, -10.6)
@@ -71,6 +71,10 @@ var hand_tilt := 10.0
 var hand_roll := 90.0
 const BRUSH_TIME := 4.2
 const BRUSH_HZ := 4.5
+## Flat, no falloff (see _on_brush). Four seconds of bristles against the lens
+## is the one sound in the game with nowhere to hide, so it sits well under the
+## drip and the room tone.
+const BRUSH_DB := -36.0
 const DRIP_MIN := 1.4
 const DRIP_MAX := 3.2
 const HINT_AFTER := 32.0
@@ -386,8 +390,14 @@ func _on_brush(_by: Node3D) -> void:
 	hands.set("rest_rot", Vector3(0.0, 0.0, deg_to_rad(hand_roll)))
 	_brush_loop = AudioBus.loop_at("toothbrush", _player.get_camera(), _player.get_camera().global_position, -60.0)
 	if _brush_loop != null:
+		# It rides on the camera, so it sits exactly on the listener and takes the
+		# full inverse-distance boost on top of whatever it is mixed at - which is
+		# how a -27 dB loop came out louder than anything else in the game. It is
+		# in the kid's own mouth: no distance, no falloff, and quiet.
+		_brush_loop.attenuation_model = AudioStreamPlayer3D.ATTENUATION_DISABLED
+		_brush_loop.max_db = 0.0
 		var t := create_tween()
-		t.tween_property(_brush_loop, "volume_db", -27.0, 0.6)
+		t.tween_property(_brush_loop, "volume_db", BRUSH_DB, 0.6)
 
 
 func _drive_brush(dt: float) -> void:
