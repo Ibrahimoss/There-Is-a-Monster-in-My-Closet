@@ -44,6 +44,9 @@ const LONG_W := 1.7
 const DONUT_R_OUT := 6.4
 const DONUT_R_IN := 3.6
 const STAIR_W := 1.7
+## Metres of corridor kept free of solid junk either side of a barrier gap and
+## in front of a way out. Sized off the widest hall prop laid on its side.
+const JUNK_CLEAR := 1.6
 const GARDEN_W := 3.4
 
 ## Real corridor faces around the bathroom door, measured off the level.
@@ -716,10 +719,24 @@ static func build_stairs(frame_xf: Transform3D, opts: Dictionary) -> Dictionary:
 		Vector3(-sx * (half - 0.35), 0.0, a_len - 0.9),
 		Vector3(sx * (half - 0.35), 0.0, a_len - 1.6),
 		Vector3(sx * (b_centre + half - 0.35), drop, 4.4),
-		Vector3(sx * (b_centre - half + 0.35), drop, 9.0),
+		Vector3(sx * (b_centre - half + 0.35), drop, 5.2),
 		Vector3(-sx * (half - 0.35), 0.0, 1.9),
 	]
-	_junk(room, frame_xf, house, rng, depth, spots, true, JUNK_HALL)
+	# Hall B is only STAIR_W wide and this junk is solid, dropped at a random
+	# yaw and sometimes tipped on its side, so a piece near the way out or in
+	# the barrier's gap can span what is left and seal the corridor. Hold it
+	# off both -- the same rule build_long applies through _clear_of. Hall A
+	# spots sit at y 0 and are not in the running lane, so they are left alone.
+	var bar_plan: Array[Dictionary] = [{"z": bar_z}]
+	var placeable: Array[Vector3] = []
+	for spot in spots:
+		if is_equal_approx(spot.y, drop):
+			if not _clear_of(bar_plan, spot.z, JUNK_CLEAR):
+				continue
+			if spot.z > b_len - JUNK_CLEAR:
+				continue
+		placeable.append(spot)
+	_junk(room, frame_xf, house, rng, depth, placeable, true, JUNK_HALL)
 
 	_entry(room)
 	room["spawn"] = Vector3(0.0, 0.0, 1.0)
