@@ -19,6 +19,21 @@ extends Node
 @export var lamp_range := 2.5
 
 var count := 0
+## Mesh name -> its light, so switches can find what they toggle.
+var lights_by_mesh := {}
+
+
+func get_light(mesh_name: String) -> OmniLight3D:
+	return lights_by_mesh.get(mesh_name) as OmniLight3D
+
+
+## Every ceiling light we made, by mesh name.
+func ceiling_lights() -> Dictionary:
+	var out := {}
+	for k: String in lights_by_mesh.keys():
+		if k.begins_with("Focus_"):
+			out[k] = lights_by_mesh[k]
+	return out
 
 
 func _ready() -> void:
@@ -46,4 +61,5 @@ func _add_light(mesh: MeshInstance3D, color: Color, energy: float, radius: float
 	light.shadow_enabled = false
 	add_child(light)
 	light.global_position = center + Vector3(0, y_offset, 0)
+	lights_by_mesh[String(mesh.name)] = light
 	count += 1

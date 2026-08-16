@@ -139,21 +139,57 @@ func _test_door(door: Door) -> void:
 	var p3 := await _push(normal, PUSH_TIME)
 	var through_reclosed := (p3 - c).dot(normal) > 0.3
 
+	# open INTO the player standing in the swing: they must get shoved out,
+	# never left inside the panel
+	var toward := -door.swing_away_from(a)
+	_player.teleport_to(Vector3(c.x, floor_y, c.z) - normal * 0.45)
+	await get_tree().physics_frame
+	door._dir = toward
+	door.set_open(true)
+	await _wait(door.swing_time + 0.5)
+	var inside := _panel_overlaps_player(door)
+	door.set_open(false)
+	await _wait(door.swing_time + 0.3)
+
 	var swing_clean := (not overlaps_closed.is_empty()) \
 		or (overlaps_a.is_empty() and overlaps_b.is_empty())
-	var ok := (not through_closed) and pass_ab and pass_ba and (not through_reclosed) and swing_clean
+	var ok := (not through_closed) and pass_ab and pass_ba and (not through_reclosed) and swing_clean and not inside
 	if not ok:
 		_fail += 1
-	print("  %-16s closed:%s  A>B:%s  B>A:%s  reclosed:%s  closed-pose hits:%s  open-from-A hits:%s  open-from-B hits:%s" % [
+	print("  %-16s closed:%s  A>B:%s  B>A:%s  reclosed:%s  into-player:%s  closed-pose hits:%s  open-from-A hits:%s  open-from-B hits:%s" % [
 		pname,
 		"FAIL(passes)" if through_closed else "blocks",
 		"ok" if pass_ab else "FAIL",
 		"ok" if pass_ba else "FAIL",
 		"FAIL(passes)" if through_reclosed else "blocks",
+		"FAIL(stuck in panel)" if inside else "shoved",
 		str(overlaps_closed) if not overlaps_closed.is_empty() else "none",
 		str(overlaps_a) if not overlaps_a.is_empty() else "none",
 		str(overlaps_b) if not overlaps_b.is_empty() else "none",
 	])
+
+
+func _panel_overlaps_player(door: Door) -> bool:
+	var body := _body_of(door)
+	if body == null:
+		return false
+	var shape_node: CollisionShape3D = null
+	for c in body.get_children():
+		if c is CollisionShape3D:
+			shape_node = c as CollisionShape3D
+			break
+	if shape_node == null:
+		return false
+	var q := PhysicsShapeQueryParameters3D.new()
+	q.shape = shape_node.shape
+	q.transform = shape_node.global_transform
+	q.collision_mask = 2
+	q.margin = 0.0
+	var hits := _player.get_world_3d().direct_space_state.intersect_shape(q, 4)
+	for h: Dictionary in hits:
+		if h["collider"] == _player:
+			return true
+	return false
 
 
 func _collect(node: Node, out: Array[Door]) -> void:

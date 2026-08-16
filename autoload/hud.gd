@@ -79,7 +79,32 @@ void fragment() {
 const DOT_IDLE := Color(1, 1, 1, 0.16)
 const DOT_ACTIVE := Color(0.93, 0.78, 0.52, 0.9)
 
+## World prompt: a small key icon + label projected onto the thing you are
+## looking at. Eases in with a little scale, glides between targets, scales
+## with distance, fades with depth.
+const KEY_ICON := preload("res://assets/icons/keyboard_r.png")
+const CAPTION := Color(1.0, 1.0, 0.93)
+const WP_IN := 0.22
+const WP_OUT := 0.12
+const WP_FOLLOW := 24.0
+const WP_NEAR := 1.35
+const WP_SCALE_MIN := 0.85
+const WP_SCALE_MAX := 1.2
+const WP_FADE_FAR := 2.5
+const WP_FADE_BAND := 0.6
+const WP_OFFSET_Y := -18.0
+const WP_MARGIN := 28.0
+
 var _top: CanvasLayer
+var _wp: Control
+var _wp_box: HBoxContainer
+var _wp_text: Label
+var _wp_target: Node = null
+var _wp_pos := Vector2.ZERO
+var _wp_alpha := 0.0
+var _wp_scale := 1.0
+var _wp_tween: Tween
+var _wp_text_tween: Tween
 var _grain: ColorRect
 var _stamina_rect: ColorRect
 var _stamina_mat: ShaderMaterial
@@ -100,6 +125,9 @@ var _flash_tween: Tween
 func _ready() -> void:
 	layer = 9
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	# after the player's _process, so the projected prompt does not trail a
+	# frame behind the camera and swim on turns
+	process_priority = 100
 	visible = false
 
 	_top = CanvasLayer.new()
@@ -116,7 +144,12 @@ func _ready() -> void:
 	_covers_rect = _shader_rect(COVERS_SHADER)
 	_covers_mat = _covers_rect.material
 	_build_reticle()
+	_build_world_prompt()
 	_build_flash()
+
+
+func _process(delta: float) -> void:
+	_update_world_prompt(delta)
 
 
 func _shader_rect(code: String) -> ColorRect:
@@ -194,6 +227,131 @@ func _build_flash() -> void:
 	_flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_flash.color = Color(1, 1, 1, 0)
 	add_child(_flash)
+
+
+func _build_world_prompt() -> void:
+	_wp = Control.new()
+	_wp.name = "WorldPrompt"
+	_wp.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_wp.modulate.a = 0.0
+	_wp.visible = false
+	_top.add_child(_wp)
+
+	_wp_box = HBoxContainer.new()
+	_wp_box.add_theme_constant_override("separation", 8)
+	_wp_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_wp.add_child(_wp_box)
+
+	var icon := TextureRect.new()
+	icon.texture = KEY_ICON
+	icon.custom_minimum_size = Vector2(30, 30)
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_wp_box.add_child(icon)
+
+	_wp_text = _doom_label("", 26, CAPTION)
+	_wp_text.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_wp_box.add_child(_wp_text)
+
+
+## The thing under the reticle changed. null clears. Same target with a new
+## prompt (Open -> Close) just re-reads the text with a small dip.
+func set_world_target(t: Node) -> void:
+	if t == _wp_target:
+		if t != null:
+			_retext(_prompt_of(t))
+		return
+	var had := _wp_target != null and _wp_alpha > 0.05
+	_wp_target = t
+	_dot.color = DOT_ACTIVE if t != null else DOT_IDLE
+	if t == null:
+		_wp_tween_out()
+		return
+	_wp_text.text = _prompt_of(t)
+	_wp_box.reset_size()
+	if not had:
+		# first appearance snaps to the anchor, target switches glide
+		_wp_pos = _project(t)
+	_wp_tween_in()
+
+
+func _prompt_of(t: Node) -> String:
+	if t.has_method("get_prompt"):
+		return String(t.call("get_prompt"))
+	return "Use"
+
+
+func _retext(text: String) -> void:
+	if _wp_text.text == text:
+		return
+	_wp_text.text = text
+	_wp_box.reset_size()
+	if _wp_text_tween != null and _wp_text_tween.is_valid():
+		_wp_text_tween.kill()
+	_wp_text.modulate.a = 0.45
+	_wp_text_tween = create_tween()
+	_wp_text_tween.tween_property(_wp_text, "modulate:a", 1.0, 0.14)
+
+
+func _wp_tween_in() -> void:
+	if _wp_tween != null and _wp_tween.is_valid():
+		_wp_tween.kill()
+	_wp.visible = true
+	_wp_scale = 0.86
+	_wp_tween = create_tween().set_parallel(true)
+	_wp_tween.tween_property(self, "_wp_alpha", 1.0, WP_IN).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	_wp_tween.tween_property(self, "_wp_scale", 1.0, WP_IN).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+
+
+func _wp_tween_out() -> void:
+	if _wp_tween != null and _wp_tween.is_valid():
+		_wp_tween.kill()
+	_wp_tween = create_tween()
+	_wp_tween.tween_property(self, "_wp_alpha", 0.0, WP_OUT)
+
+
+func _project(t: Node) -> Vector2:
+	var cam := get_viewport().get_camera_3d()
+	if cam == null:
+		return _wp_pos
+	var wpos: Vector3 = t.call("get_prompt_anchor") if t.has_method("get_prompt_anchor") \
+		else (t as Node3D).global_position if t is Node3D else cam.global_position + cam.global_basis * Vector3(0, 0, -1.5)
+	return cam.unproject_position(wpos)
+
+
+func _update_world_prompt(delta: float) -> void:
+	if _wp_target != null and not is_instance_valid(_wp_target):
+		_wp_target = null
+		_wp_tween_out()
+	if _wp_target == null:
+		_wp.modulate.a = _wp_alpha
+		if _wp_alpha <= 0.01:
+			_wp.visible = false
+		return
+	var cam := get_viewport().get_camera_3d()
+	if cam == null:
+		return
+	var wpos: Vector3 = _wp_target.call("get_prompt_anchor") if _wp_target.has_method("get_prompt_anchor") \
+		else (_wp_target as Node3D).global_position if _wp_target is Node3D else cam.global_position
+	if cam.is_position_behind(wpos):
+		_wp.visible = false
+		return
+	_wp.visible = true
+	var sp := cam.unproject_position(wpos)
+	var vr := get_viewport().get_visible_rect()
+	sp = sp.clamp(vr.position + Vector2(WP_MARGIN, WP_MARGIN), vr.end - Vector2(WP_MARGIN, WP_MARGIN))
+	_wp_pos = _wp_pos.lerp(sp, 1.0 - exp(-WP_FOLLOW * delta))
+	var dist := cam.global_position.distance_to(wpos)
+	var s := clampf(WP_NEAR / maxf(dist, 0.5), WP_SCALE_MIN, WP_SCALE_MAX)
+	var depth_a := clampf((WP_FADE_FAR - dist) / WP_FADE_BAND, 0.45, 1.0)
+	var size := _wp_box.size
+	_wp.pivot_offset = size * 0.5
+	_wp.size = size
+	_wp.position = _wp_pos - Vector2(size.x * 0.5, size.y) + Vector2(0.0, WP_OFFSET_Y)
+	_wp.scale = Vector2.ONE * s * _wp_scale
+	_wp.modulate.a = _wp_alpha * depth_a
 
 
 ## Gameplay scenes turn the HUD on; menus turn it off.

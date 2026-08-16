@@ -67,11 +67,16 @@ const STREAMS := {
 	"room_tone": preload("res://assets/audio/ambience/crickets_night.mp3"),
 }
 
+## Baked procedural streams (scripts/sound_gen.gd), made on first use so the
+## start click stays cheap. Looked up after STREAMS.
+const GeneratedSounds := preload("res://scripts/sound_gen.gd")
+
 var _unlocked := false
 var _sfx: Array[AudioStreamPlayer] = []
 var _ambience: AudioStreamPlayer
 var _ambience_tween: Tween
 var _missing_warned := {}
+var _generated := {}
 var _world_lowpass: AudioEffectLowPassFilter
 var _muffle_tween: Tween
 
@@ -148,6 +153,7 @@ func play_at(stream: AudioStream, pos: Vector3, volume_db := 0.0, pitch := 1.0) 
 	p.stream = stream
 	p.volume_db = volume_db
 	p.pitch_scale = pitch
+	p.bus = "SFX"
 	# Interior-scale falloff - the defaults are tuned for outdoor distances.
 	p.unit_size = 3.0
 	p.max_distance = 16.0
@@ -177,6 +183,9 @@ func _jittered(jitter: float) -> float:
 
 func _pick(sound: String) -> AudioStream:
 	if not STREAMS.has(sound):
+		var gen := _generated_stream(sound)
+		if gen != null:
+			return gen
 		if not _missing_warned.has(sound):
 			_missing_warned[sound] = true
 			push_warning("AudioBus: no stream registered for '%s'" % sound)
@@ -186,6 +195,56 @@ func _pick(sound: String) -> AudioStream:
 		var variants := entry as Array
 		return variants[randi() % variants.size()] as AudioStream
 	return entry as AudioStream
+
+
+## Procedural streams by name, baked the first time they are asked for.
+func _generated_stream(sound: String) -> AudioStream:
+	if _generated.has(sound):
+		return _generated[sound] as AudioStream
+	var s: AudioStream = null
+	match sound:
+		"water_loop":
+			s = GeneratedSounds.water_loop()
+		"flush":
+			s = GeneratedSounds.flush()
+		"drawer_slide":
+			s = GeneratedSounds.drawer_slide()
+		"brush":
+			s = GeneratedSounds.brush()
+		"drip":
+			s = GeneratedSounds.drip()
+		"toothbrush":
+			s = GeneratedSounds.toothbrush()
+	if s != null:
+		_generated[sound] = s
+	return s
+
+
+## Bake named procedural sounds now, off the interaction path.
+func prewarm(sounds: Array[String]) -> void:
+	for s in sounds:
+		_generated_stream(s)
+
+
+## The stream a name resolves to (a random variant for lists), or null.
+func stream(sound: String) -> AudioStream:
+	return _pick(sound)
+
+
+## Positional loop that the caller owns (tap water, a running thing). Parent
+## it under the prop so it dies with the level. Starts silent unless unlocked.
+func loop_at(sound: String, parent: Node, pos: Vector3, volume_db := -14.0) -> AudioStreamPlayer3D:
+	var p := AudioStreamPlayer3D.new()
+	p.stream = _pick(sound)
+	p.volume_db = volume_db
+	p.unit_size = 3.0
+	p.max_distance = 16.0
+	p.bus = "SFX"
+	parent.add_child(p)
+	p.global_position = pos
+	if _unlocked and p.stream != null:
+		p.play()
+	return p
 
 
 ## Named looping ambience. MP3 streams don't loop by default; force it.
