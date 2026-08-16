@@ -197,6 +197,7 @@ func _run() -> void:
 	await _house_stage()
 	await _autoplay()
 	_perf()
+	_freed_room_zero()
 	_done()
 
 
@@ -654,6 +655,29 @@ func _perf() -> void:
 	# so one long slab loses the rest and goes black
 	_check("perf: mesh count", meshes < 1200, "meshes=%d" % meshes)
 	_check("perf: light count", lights < 120, "lights=%d" % lights)
+
+
+## Regression: the dream frees its corridor -- the chase's room zero -- as soon
+## as you are two rooms clear of it, so _cull_rooms walks a freed object from
+## room three on. It used to cast first and check validity after, which crashed
+## the run a hallway or two into the chase.
+func _freed_room_zero() -> void:
+	var rooms: Array = _chase.get("rooms")
+	if rooms.is_empty():
+		_check("cull survives a freed room zero", false, "no rooms built")
+		return
+	var root := rooms[0]["root"] as Node3D
+	if root == null:
+		_check("cull survives a freed room zero", false, "room zero has no root")
+		return
+	# free it the way dream.gd does, and let the frame turn over so it is gone
+	root.free()
+	_chase.call("_cull_rooms", 2)
+	_check("cull survives a freed room zero", true)
+	_check("the dead room is blanked, not re-read", rooms[0]["root"] == null)
+	# and it stays survivable on the next pass
+	_chase.call("_cull_rooms", 3)
+	_check("cull survives it twice", true)
 
 
 func _done() -> void:

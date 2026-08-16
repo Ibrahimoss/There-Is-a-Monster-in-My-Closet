@@ -718,9 +718,17 @@ func _nearby_lights(index: int) -> Array[OmniLight3D]:
 ## the room beat can desync behind it.
 func _cull_rooms(around: int) -> void:
 	for i in rooms.size():
-		var root := rooms[i]["root"] as Node3D
-		if root != null and is_instance_valid(root):
-			root.visible = absi(i - around) <= ROOM_WINDOW
+		# Room zero is the dream's corridor, which the dream frees once you are
+		# two rooms clear of it -- so from room three on, this walk meets a
+		# freed object. The check has to happen before the cast: casting a
+		# freed object is itself the error, so a guard after it never runs.
+		# Indices stay put because everything else addresses rooms by index;
+		# the dead entry is only blanked so it is cheap to skip next time.
+		var raw: Variant = rooms[i]["root"]
+		if not is_instance_valid(raw):
+			rooms[i]["root"] = null
+			continue
+		(raw as Node3D).visible = absi(i - around) <= ROOM_WINDOW
 
 
 ## A flash is only worth showing where there is glass or sky to see it through.

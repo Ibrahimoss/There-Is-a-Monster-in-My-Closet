@@ -697,19 +697,32 @@ func _hide_kid() -> void:
 	_kid.visible = false
 
 
+## Arabic wants the naskh face itself, not naskh glyphs borrowed through the
+## display font's fallback: the doom metrics are built for blocky capitals, so
+## a heavy outline and a hard 3px shadow bury the joins of a connected script.
+## Right-aligned too, because the menu reads from the right in Arabic.
+static func _is_ar() -> bool:
+	return GameState.language == "ar"
+
+
+static func _text_font() -> Font:
+	return UiKit.font() if _is_ar() else DOOM_FONT
+
+
 static func _doom_label(text: String, size: int, color: Color, outline: int) -> Label:
 	var l := Label.new()
 	l.text = text
-	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	var ar := _is_ar()
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT if ar else HORIZONTAL_ALIGNMENT_LEFT
 	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	l.add_theme_font_override("font", DOOM_FONT)
+	l.add_theme_font_override("font", _text_font())
 	l.add_theme_font_size_override("font_size", size)
 	l.add_theme_color_override("font_color", color)
 	l.add_theme_color_override("font_outline_color", OUTLINE)
-	l.add_theme_constant_override("outline_size", outline)
+	l.add_theme_constant_override("outline_size", mini(outline, 2) if ar else outline)
 	l.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.6))
-	l.add_theme_constant_override("shadow_offset_x", 3)
-	l.add_theme_constant_override("shadow_offset_y", 3)
+	l.add_theme_constant_override("shadow_offset_x", 1 if ar else 3)
+	l.add_theme_constant_override("shadow_offset_y", 1 if ar else 3)
 	return l
 
 
@@ -719,8 +732,9 @@ func _menu_item(text: String, size: int) -> Button:
 	b.text = text
 	b.flat = true
 	b.focus_mode = Control.FOCUS_NONE
-	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
-	b.add_theme_font_override("font", DOOM_FONT)
+	var ar := _is_ar()
+	b.alignment = HORIZONTAL_ALIGNMENT_RIGHT if ar else HORIZONTAL_ALIGNMENT_LEFT
+	b.add_theme_font_override("font", _text_font())
 	b.add_theme_font_size_override("font_size", size)
 	b.add_theme_color_override("font_color", CAPTION)
 	b.add_theme_color_override("font_hover_color", UiKit.WARM)
@@ -728,10 +742,10 @@ func _menu_item(text: String, size: int) -> Button:
 	b.add_theme_color_override("font_focus_color", CAPTION)
 	b.add_theme_color_override("font_disabled_color", CAPTION)
 	b.add_theme_color_override("font_outline_color", OUTLINE)
-	b.add_theme_constant_override("outline_size", 8)
+	b.add_theme_constant_override("outline_size", 2 if ar else 8)
 	b.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.6))
-	b.add_theme_constant_override("shadow_offset_x", 3)
-	b.add_theme_constant_override("shadow_offset_y", 3)
+	b.add_theme_constant_override("shadow_offset_x", 1 if ar else 3)
+	b.add_theme_constant_override("shadow_offset_y", 1 if ar else 3)
 	return b
 
 
