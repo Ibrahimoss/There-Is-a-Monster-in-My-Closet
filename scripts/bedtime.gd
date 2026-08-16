@@ -25,7 +25,7 @@ enum State { TEETH, BED, LYING, DONE }
 
 ## After the closet beat: fade out and back to the start screen. Off if a
 ## later act picks up from `finished` / GameState.Act.CLOSET.
-const CUT_TO_MENU := true
+const CUT_TO_MENU := false
 
 ## The kid's room: on the floor by the bed, facing the door.
 const START_POS := Vector3(5.5, 3.74, -10.6)
