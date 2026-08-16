@@ -7,6 +7,11 @@ extends Node
 ## lights, and the Doom filter's palette crush hides soft shadows anyway.
 
 @export var house_path: NodePath = NodePath("../house")
+## Act 1 took a few of the house's meshes with it when it was built on a copy
+## of the level -- the parents' ceiling fixture among them. Lights are placed
+## in world space, so where a mesh hangs in the tree does not matter; it only
+## has to be somewhere we look.
+@export var extra_paths: Array[NodePath] = [NodePath("../act1")]
 
 @export_group("Ceiling fixtures (Focus_*)")
 @export var ceiling_color := Color(1.0, 0.93, 0.78)
@@ -42,10 +47,22 @@ func _ready() -> void:
 		push_warning("LampLights: no house at '%s'." % house_path)
 		return
 
-	for child in house.get_children():
+	_scan(house)
+	for extra in extra_paths:
+		var node := get_node_or_null(extra)
+		if node != null:
+			_scan(node)
+
+
+## Direct children only, same as it always was: a lamp is a mesh sitting in the
+## room, not something buried in a prop's subtree.
+func _scan(parent: Node) -> void:
+	for child in parent.get_children():
 		if not child is MeshInstance3D:
 			continue
 		var lamp_name: String = child.name
+		if lights_by_mesh.has(lamp_name):
+			continue
 		if lamp_name.begins_with("Focus_"):
 			_add_light(child, ceiling_color, ceiling_energy, ceiling_range, -0.25)
 		elif lamp_name.begins_with("Desk_lamp") or lamp_name.begins_with("Lamp_"):
