@@ -36,7 +36,7 @@ var anchor_local := Vector3.ZERO
 var prompt_open := "Open"
 var prompt_close := "Close"
 var prompt_open_ar := "افتح"
-var prompt_close_ar := "سكر"
+var prompt_close_ar := "سكّر"
 
 var _aabb := AABB()
 var _glow_mats: Array[StandardMaterial3D] = []

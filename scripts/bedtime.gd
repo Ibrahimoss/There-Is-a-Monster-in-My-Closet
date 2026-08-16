@@ -83,20 +83,20 @@ const REFUSE_COOLDOWN := 7.0
 ## Seconds the kid gets to put the lamps out before they go by themselves.
 const LAMP_GRACE := 22.0
 
-const LINE_BED := "okay... bed"
-const LINE_NOT_YET := "not yet. teeth first"
-const LINE_HINT_TEETH := "teeth. the bathroom's right next door"
-const LINE_HINT_BED := "my room's the one with the light on"
-const LINE_STAIRS := "Dad: bed's upstairs. go on"
-const LINE_NIGHT := "Dad: night, champ"
-const LINE_NO_WAY := "no... I'm not opening it"
-const LINE_LAMP := "...lamp off. sleep"
+const LINE_BED := "طيب... النوم"
+const LINE_NOT_YET := "مو الحين. الأسنان أول"
+const LINE_HINT_TEETH := "الأسنان. الحمّام جنب غرفتي"
+const LINE_HINT_BED := "غرفتي اللي ضوها مولّع"
+const LINE_STAIRS := "أبوي: النوم فوق. يلا اطلع"
+const LINE_NIGHT := "أبوي: تصبح على خير يا بطل"
+const LINE_NO_WAY := "لا... ما راح أفتحه"
+const LINE_LAMP := "...أطفي اللمبة. أنام"
 const LINES_CLOSET: Array[String] = [
-	"Dad!",
-	"Dad: yes?",
-	"there's something in the closet",
-	"Dad: there's nothing in there. go to sleep",
-	"Dad: and I don't want to hear a sound",
+	"بابا!",
+	"أبوي: هلا؟",
+	"فيه شي في الدولاب",
+	"أبوي: ما فيه شي. نام.",
+	"أبوي: ولا أبغى أسمع صوت",
 ]
 
 var state := State.TEETH

@@ -92,18 +92,18 @@ const OUTLINE := Color(0.09, 0.055, 0.03, 1.0)
 const TITLE_DARK := 0.55
 const TYPE_CPS := 30.0
 
-const LINE_DAD := "Dad: lights out, champ."
-const LINE_DAD_OPTIONS := "Dad: fine. just for a bit."
-const LINE_DAD_CREDITS := "Dad: alright. once upon a time..."
-const LINE_DAD_QUIT := "Dad: yes you are."
+const LINE_DAD := "أبوي: طفّ الضو يا بطل."
+const LINE_DAD_OPTIONS := "أبوي: طيب. شوي بس."
+const LINE_DAD_CREDITS := "أبوي: طيب. كان يا ما كان..."
+const LINE_DAD_QUIT := "أبوي: بلى، نعسان."
 ## The kid's answers, in order. `tag` says what the answer does, small and dim.
 const REPLIES: Array[Dictionary] = [
-	{"id": "begin", "say": "ok.", "tag": "begin"},
-	{"id": "options", "say": "can the light stay on?", "tag": "options"},
-	{"id": "credits", "say": "tell me a story", "tag": "credits"},
-	{"id": "quit", "say": "I'm not sleepy", "tag": "quit"},
+	{"id": "begin", "say": "طيب.", "tag": "begin"},
+	{"id": "options", "say": "نخلّي الضو مولّع؟", "tag": "options"},
+	{"id": "credits", "say": "سولف لي", "tag": "credits"},
+	{"id": "quit", "say": "أنا مو نعسان", "tag": "quit"},
 ]
-const CONTROLS_LINE := "WASD move   R use   Shift run   C crouch   Q / E lean       headphones recommended"
+const CONTROLS_LINE := "WASD حركة   R تفاعل   Shift جري   C انحناء   Q / E ميلان       يفضّل تلبس سماعات"
 
 ## Options rows. Volumes and mouse are ten notches.
 const SLIDER_STEPS := 10
@@ -111,20 +111,21 @@ const SENS_MIN := 0.4
 const SENS_MAX := 2.2
 
 const CREDITS_LINES: Array[Dictionary] = [
-	{"t": "once upon a time", "s": 24, "c": 1},
-	{"t": "two people made a game in three days", "s": 24, "c": 1},
+	{"t": "كان يا ما كان", "s": 24, "c": 1},
+	{"t": "شخصين سوّوا لعبة في ثلاثة أيام", "s": 24, "c": 1},
 	{"t": "", "s": 12, "c": 2},
 	{"t": "Yaser Allahem", "s": 32, "c": 0},
 	{"t": "Ibrahim Alhumud", "s": 32, "c": 0},
 	{"t": "", "s": 12, "c": 2},
-	{"t": "for Game Zanga 14", "s": 22, "c": 1},
-	{"t": "theme: dreams", "s": 22, "c": 1},
+	{"t": "لـ Game Zanga 14", "s": 22, "c": 1},
+	{"t": "الفكرة: الأحلام", "s": 22, "c": 1},
 	{"t": "", "s": 12, "c": 2},
-	{"t": "letters  Amazdoom, Noto Naskh Arabic", "s": 18, "c": 2},
-	{"t": "noises  Kenney, alex_jauk, flutie8211, universfield", "s": 18, "c": 2},
-	{"t": "made with Godot", "s": 18, "c": 2},
+	{"t": "الخطوط  Amazdoom, Noto Naskh Arabic", "s": 18, "c": 2},
+	{"t": "الأصوات  Kenney, alex_jauk, flutie8211, universfield, janbezouska", "s": 18, "c": 2},
+	{"t": "المجسمات  Elbolilloduro, Mohit Akundi", "s": 18, "c": 2},
+	{"t": "مسوية بـ Godot", "s": 18, "c": 2},
 	{"t": "", "s": 12, "c": 2},
-	{"t": "the end. go to sleep.", "s": 24, "c": 1},
+	{"t": "النهاية. نام.", "s": 24, "c": 1},
 ]
 
 var _level: Node3D
@@ -898,14 +899,14 @@ func _fill_credits() -> void:
 
 
 func _fill_options() -> void:
-	_add_slider("sound", "master", 0.0, 1.0)
-	_add_slider("effects", "sfx", 0.0, 1.0)
-	_add_slider("ambience", "ambience", 0.0, 1.0)
-	_add_slider("mouse", "sensitivity", SENS_MIN, SENS_MAX)
-	_add_toggle("invert Y", "invert_y", [false, true], ["off", "on"])
+	_add_slider("الصوت", "master", 0.0, 1.0)
+	_add_slider("المؤثرات", "sfx", 0.0, 1.0)
+	_add_slider("الأجواء", "ambience", 0.0, 1.0)
+	_add_slider("حساسية الماوس", "sensitivity", SENS_MIN, SENS_MAX)
+	_add_toggle("عكس المحور Y", "invert_y", [false, true], ["معطّل", "مفعّل"])
 	if not OS.has_feature("web"):
-		_add_toggle("window", "fullscreen", [false, true], ["windowed", "fullscreen"])
-	_add_toggle("prompts", "language", ["en", "ar"], ["english", "arabic"])
+		_add_toggle("النافذة", "fullscreen", [false, true], ["نافذة", "ملء الشاشة"])
+	_add_toggle("اللغة", "language", ["ar", "en"], ["عربي", "English"])
 	var pad := Control.new()
 	pad.custom_minimum_size = Vector2(0, 8)
 	_panel_box.add_child(pad)

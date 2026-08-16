@@ -32,6 +32,10 @@ and given a tail with ffmpeg:
 - Crickets — alex_jauk (Pixabay).
 - Air conditioner — flutie8211 (Pixabay).
 
+- Fluorescent light buzz — janbezouska, via Freesound Community (Pixabay
+  Content License).
+  https://pixabay.com/sound-effects/film-special-effects-factory-fluorescent-light-buzz-6871/
+
 Everything else in `scripts/sound_gen.gd` is generated at runtime: the drip,
 toothbrush, tap, flush, drawer, heartbeat, wind, and the monster's breath,
 steps, roar and glitch.
@@ -39,4 +43,8 @@ steps, roar and glitch.
 ## Art
 
 - House model and textures — the House asset pack under `assets/House`.
+- Sewers (asset pack) — Elbolilloduro, CC0 1.0 Universal (public domain).
+  https://elbolilloduro.itch.io/sewers
+- Lighting Fixtures Set 1 Free — Mohit Akundi, Sketchfab Free Standard License.
+  https://sketchfab.com/3d-models/lighting-fixtures-set-1-free-0807ac67c3424e178f9ac521e1f27724
 - Fonts — Amazdoom, Noto Naskh Arabic.

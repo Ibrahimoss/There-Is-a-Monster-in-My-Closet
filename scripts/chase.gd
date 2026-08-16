@@ -77,10 +77,10 @@ const HOUSE_PATH: Array[Vector3] = [
 	Vector3(5.4448, 3.7316, -6.186702),
 ]
 
-const LINE_EMERGE := "no no no"
-const LINE_BLOCKED := "not this way"
-const LINE_HURRY := "come on come on"
-const LINE_DAD := "Dad: hey. it's late. bed."
+const LINE_EMERGE := "لا لا لا"
+const LINE_BLOCKED := "مو من هنا"
+const LINE_HURRY := "يلا يلا"
+const LINE_DAD := "أبوي: هيه. تأخّرت. ارقد."
 
 ## Tests set this so `finished` can be checked without the scene changing under
 ## the test node.

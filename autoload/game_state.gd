@@ -52,10 +52,37 @@ var _checkpoint := Vector3.ZERO
 var _checkpoint_set := false
 
 
+## The display font is Latin-only, and every caption and prompt in the game is
+## Arabic now, so on its own it draws a row of empty boxes. Rather than swap
+## fonts at each of the dozen call sites -- and lose the look on the English
+## text -- give the shared FontFile a fallback: Godot walks it per missing
+## glyph, so Latin still comes out in the doom face and Arabic in naskh, even
+## mixed inside one line. Fonts load once per path, so mutating the resource
+## here reaches the caption UI, the HUD prompts and the start screen at once.
+const DISPLAY_FONT_PATH := "res://assets/fonts/Amazdoomleft-epw3.ttf"
+const ARABIC_FONT_PATH := "res://assets/fonts/NotoNaskhArabic.ttf"
+
+
 func _ready() -> void:
 	load_settings()
+	_wire_font_fallback()
 	# buses are built by AudioBus, which loads after this autoload
 	apply_settings.call_deferred()
+
+
+func _wire_font_fallback() -> void:
+	if not ResourceLoader.exists(DISPLAY_FONT_PATH) or not ResourceLoader.exists(ARABIC_FONT_PATH):
+		return
+	var display := load(DISPLAY_FONT_PATH) as FontFile
+	var arabic := load(ARABIC_FONT_PATH) as FontFile
+	if display == null or arabic == null:
+		return
+	for f in display.fallbacks:
+		if f == arabic:
+			return
+	var chain := display.fallbacks.duplicate()
+	chain.append(arabic)
+	display.fallbacks = chain
 
 
 func load_settings() -> void:
