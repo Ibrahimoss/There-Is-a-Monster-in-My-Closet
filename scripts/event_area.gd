@@ -17,6 +17,10 @@ var _fired := false
 
 
 func _ready() -> void:
+	# the player body sits on layer 1 in the old rig and layer 2 in the new
+	# one — watch both so zones survive either scene
+	collision_mask = 0b11
+	collision_layer = 0  # a trigger volume is seen by nobody, it only looks
 	body_entered.connect(_on_body)
 
 

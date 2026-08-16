@@ -42,6 +42,20 @@ func _ready() -> void:
 	if _player != null and _player.has_method("begin_cinematic"):
 		_player.begin_cinematic()
 
+	# The Fade autoload boots opaque and only the start screen fades it in.
+	# Booting a level scene directly (dev, sandbox) would stay black forever
+	# UNDER our own eyelids. If nobody has claimed the fade by the time the
+	# intro starts, clear it fast — our own black covers the seam.
+	_claim_unclaimed_fade.call_deferred()
+
+
+func _claim_unclaimed_fade() -> void:
+	await get_tree().create_timer(0.3).timeout
+	var fade := get_node_or_null("/root/Fade")
+	if fade != null and fade.has_method("fade_in") \
+			and fade.get("_rect") != null and fade._rect.color.a > 0.99:
+		fade.fade_in(0.3)
+
 	var tween := create_tween()
 	tween.tween_interval(start_delay)
 

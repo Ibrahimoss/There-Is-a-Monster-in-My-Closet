@@ -105,11 +105,21 @@ func on_player_ready(player: CharacterBody3D) -> void:
 		c.name = "Chase"
 		_root.add_child(c)
 		c.call("setup", _root, _house, _player)
-		# the running order. Ibrahim's dream rooms slot between Bedtime and the
-		# pillow hall later; this is the one place that has to change for it
+		# The running order: Bedtime, Ibrahim's act1 (his room, the flip, the
+		# sewer, out at the bathroom), then the pillow hall, then the chase.
+		#
+		# act1 is not built here — it is a node in the level scene carrying
+		# its own script, and it arms itself when GameState reaches
+		# Act.CLOSET, which is what Bedtime sets on its way out. So Bedtime
+		# hands to it without a connection and only what follows is wired
+		# here. A level with no act1 (the tool scenes build a bare one)
+		# falls back to Bedtime going straight to the pillow hall.
 		var bedtime := _root.get_node_or_null("Bedtime")
+		var act1 := _root.get_node_or_null("act1")
 		var head: Node = dream if dream != null else c
-		if bedtime != null:
+		if act1 != null and act1.has_signal("finished"):
+			act1.connect("finished", Callable(head, "begin"))
+		elif bedtime != null:
 			bedtime.connect("finished", Callable(head, "begin"))
 		if dream != null:
 			dream.connect("finished", Callable(c, "begin"))

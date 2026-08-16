@@ -24,7 +24,7 @@ const MeshUtilScript := preload("res://scripts/mesh_util.gd")
 enum State { TEETH, BED, LYING, DONE }
 
 ## After the closet beat: fade out and back to the start screen. Off now that
-## the chase picks up from `finished` / GameState.Act.CLOSET.
+## the dream picks up from `finished` / GameState.Act.CLOSET.
 const CUT_TO_MENU := false
 
 ## The kid's room: on the floor by the bed, facing the door.
