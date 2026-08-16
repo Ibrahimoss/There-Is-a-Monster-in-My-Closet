@@ -295,6 +295,8 @@ func _build_switches() -> void:
 		p.set("axis", Vector3(0, 0, 1) if normal.x != 0.0 else Vector3(1, 0, 0))
 		p.set("prompt_open", "Light on")
 		p.set("prompt_close", "Light off")
+		p.set("prompt_open_ar", "شغل الضو")
+		p.set("prompt_close_ar", "طفي الضو")
 		p.set("action", _toggle_lights.bind(group))
 		p.set("lights", group)
 		p.call("snap_state", best.visible)
@@ -322,6 +324,8 @@ func _build_lamp_switches() -> void:
 		p.set("flick_time", 0.16)
 		p.set("prompt_open", "Lamp on")
 		p.set("prompt_close", "Lamp off")
+		p.set("prompt_open_ar", "شغل الاباجورة")
+		p.set("prompt_close_ar", "طفي الاباجورة")
 		var group: Array[Light3D] = [light]
 		p.set("action", _toggle_lights.bind(group))
 		p.set("lights", group)
@@ -391,6 +395,8 @@ func _build_bathroom() -> void:
 		lid.set("recoil_amount", 0.01)
 		lid.set("prompt_open", "Close lid")
 		lid.set("prompt_close", "Lift lid")
+		lid.set("prompt_open_ar", "سكر الغطا")
+		lid.set("prompt_close_ar", "ارفع الغطا")
 	if seat_mi != null:
 		var seat: Node3D = HingedPropScript.new()
 		_add_prop(seat, seat_mi, PropScript.PivotMode.ORIGIN, Vector3(0.02, 0.10, 0.02))
@@ -403,6 +409,8 @@ func _build_bathroom() -> void:
 		seat.set("recoil_amount", 0.01)
 		seat.set("prompt_open", "Lift seat")
 		seat.set("prompt_close", "Lower seat")
+		seat.set("prompt_open_ar", "ارفع الكرسي")
+		seat.set("prompt_close_ar", "نزل الكرسي")
 		if lid != null:
 			seat.set("needs", lid)
 			seat.set("needs_open", false)
@@ -419,6 +427,8 @@ func _build_bathroom() -> void:
 		tap.set("overshoot_deg", 4.0)
 		tap.set("prompt_open", "Turn tap")
 		tap.set("prompt_close", "Turn tap off")
+		tap.set("prompt_open_ar", "افتح الحنفية")
+		tap.set("prompt_close_ar", "سكر الحنفية")
 		tap.connect("toggled", _on_tap.bind(tap))
 
 	# flush: an interact spot on the cistern, no motion, a long sound

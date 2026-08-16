@@ -38,7 +38,7 @@ signal returned
 
 @export_group("Lines")
 ## In order, with the pause after each.
-@export var lines: PackedStringArray = ["was it......", "dad?", "i need to find squibble"]
+@export var lines: PackedStringArray = ["كان......", "بابا؟", "لازم ألقى سكويبل"]
 ## Beat before he says anything at all.
 @export var lead_in := 0.9
 @export var line_gap := 2.2

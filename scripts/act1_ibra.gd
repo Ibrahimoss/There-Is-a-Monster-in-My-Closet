@@ -25,17 +25,17 @@ signal finished
 
 @export_group("Opening")
 ## Called out from the bed, before he gets up, after the closet noise.
-@export var dad_calls: PackedStringArray = ["Dad?", "Dad!"]
+@export var dad_calls: PackedStringArray = ["بابا؟", "بابا!"]
 ## Beat between the closet noise and the first call, and between the calls.
 @export var call_gap := 1.1
 ## What he says once he's on his feet.
-@export var monologue := "i need to find squibble"
+@export var monologue := "لازم ألقى سكويبل"
 ## Caption when a locked door is tried.
-@export var locked_caption := "not here"
+@export var locked_caption := "مو من هنا"
 ## When the world turns over.
-@export var flip_caption := "wooh, what happened"
+@export var flip_caption := "ويش... ويش صار؟"
 ## When he drops into the sewer.
-@export var sewer_caption := "what's this place"
+@export var sewer_caption := "وين أنا؟"
 ## Sound the closet makes, and where it comes from. Bedtime builds the closet
 ## on this frame, so the noise lines up with the door that rattled in act 0.
 @export var closet_sound := "closet_thump"
@@ -165,13 +165,16 @@ func _arm() -> void:
 # `await` freely — this runs as its own sequence like bedtime's chain.
 # =========================================================================
 func _run() -> void:
-	_lock_the_house()
 	_hook_sewer_line()
 	# The black beat between acts: cut out on the closet creak, settle him in
 	# bed while nobody can see, cut back in with him lying there.
 	var fade := get_node_or_null("/root/Fade")
 	if fade != null and fade.has_method("fade_out"):
 		await fade.fade_out(1.4)
+	# Only now shut and lock the house. Doing it before the fade slammed the
+	# closet door in shot -- act 0 ends with that door swinging open on its
+	# own, and it was being snapped shut on the same frame it arrived.
+	_lock_the_house()
 	await wait(1.0)  # a breath of black
 	_put_in_bed()
 	_relight()

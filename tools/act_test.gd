@@ -158,16 +158,22 @@ func _run() -> void:
 	var lamp := _light("Desk_lamp_003")
 	_check("kid's lamp out", lamp != null and not lamp.visible)
 	_check("closet door opened by itself", closet != null and bool(closet.get("is_open")))
-	# the menu cut is gone: the dream rooms take over from `finished`, and hand
-	# on to the chase when the last of them is done
+	# the menu cut is gone. Act 0 now hands to Ibrahim's act1, which arms off
+	# GameState reaching CLOSET rather than off a connection; the pillow hall
+	# and then the chase wait their turn behind it.
 	var chase := _level.get_node_or_null("Chase")
 	var dream := _level.get_node_or_null("Dream")
+	var act1 := _level.get_node_or_null("act1")
 	_check("chase director attached", chase != null)
 	_check("dream director attached", dream != null)
-	_check("dream picks up from the closet beat", dream != null and int(dream.get("stage")) >= 1,
+	_check("act1 in the level", act1 != null)
+	_check("act1 armed by the closet beat", act1 != null and bool(act1.get("_armed")))
+	_check("act is CLOSET, act1's to hand on", GameState.current_act == GameState.Act.CLOSET)
+	_check("pillow hall waiting on act1", dream != null and int(dream.get("stage")) == 0,
 		"stage=%d" % (int(dream.get("stage")) if dream != null else -1))
+	_check("pillow hall is wired to act1, not to bedtime", act1 != null and dream != null
+		and act1.is_connected("finished", Callable(dream, "begin")))
 	_check("chase still waiting its turn", chase != null and int(chase.get("stage")) == 0)
-	_check("act is NIGHTMARE", GameState.current_act == GameState.Act.NIGHTMARE)
 	_done()
 
 

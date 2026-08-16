@@ -30,8 +30,13 @@ var is_open := false
 var busy := false
 ## Where the world prompt hangs, in Pivot space. Defaults to the mesh centre.
 var anchor_local := Vector3.ZERO
+## Both languages, like interactable.gd: the setting decides which shows.
+## Callers that only set the English pair still read sensibly in Arabic,
+## because the fallback is the other language rather than an empty prompt.
 var prompt_open := "Open"
 var prompt_close := "Close"
+var prompt_open_ar := "افتح"
+var prompt_close_ar := "سكر"
 
 var _aabb := AABB()
 var _glow_mats: Array[StandardMaterial3D] = []
@@ -101,6 +106,10 @@ func adopt(mi: MeshInstance3D, pivot_mode: PivotMode, interact_pad: Vector3, sol
 
 
 func get_prompt() -> String:
+	if GameState.language == "ar":
+		var ar: String = prompt_close_ar if is_open else prompt_open_ar
+		if not ar.is_empty():
+			return ar
 	return prompt_close if is_open else prompt_open
 
 

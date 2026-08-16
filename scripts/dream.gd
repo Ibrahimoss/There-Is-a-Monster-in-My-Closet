@@ -70,9 +70,9 @@ const FOG_RUN := 0.026
 ## And thin again once it is standing in front of you.
 const FOG_SEEN := 0.012
 
-const LINE_TOY := ["...no"]
-const LINE_RUN := ["the door. the door."]
-const LINE_BACK := ["it's not getting closer"]
+const LINE_TOY := ["...لا"]
+const LINE_RUN := ["الباب. الباب."]
+const LINE_BACK := ["ما يقرب"]
 
 var stage := Stage.IDLE
 var world: Node3D
